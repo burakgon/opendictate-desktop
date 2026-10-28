@@ -76,7 +76,7 @@ Grab the latest build from the [**Releases page**](https://github.com/burakgon/o
 
 | Platform | Package |
 | --- | --- |
-| **Linux** | `.AppImage` (any distro) · `.deb` (Ubuntu, Debian, Mint, Pop!_OS) · `.rpm` (Fedora, openSUSE) |
+| **Linux** | `.AppImage` (any distro) · `.deb` (Ubuntu, Debian, Mint, Pop!_OS) · `.rpm` (Fedora, openSUSE) · Arch: [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
 | **macOS** | `.dmg` (Apple Silicon and Intel) |
 | **Windows** | `-setup.exe` |
 
