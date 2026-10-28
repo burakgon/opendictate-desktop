@@ -29,8 +29,8 @@ OpenDictate brings the workflow of the Android keyboard [Dictate](https://github
 It works in every app — your browser, editor, terminal, chat, email — because it simply pastes at your cursor like you would. There's no account, no subscription and no telemetry: you plug in an API key from OpenRouter, OpenAI, Groq or any OpenAI-compatible server (including a local Whisper), and your words go straight from your machine to the provider you picked.
 
 <div align="center">
-<img src="docs/demo.gif" alt="Demo: dictating an email into a text editor, then selecting it and saying “make this more formal, add a subject line”" width="820" />
-<br/><sub>Real recording: a dictation into KWrite, then a voice command on the selected text.</sub>
+<img src="docs/demo.gif" alt="Demo: tap to dictate an email reply, select it and hold to say “make it more formal and sign it from Burak”, then ask for a git command in a terminal" width="100%" />
+<br/><sub>Animated walkthrough. Every text in it is real output from OpenDictate's default prompts (GPT-6 Luna).</sub>
 </div>
 
 ## Features
