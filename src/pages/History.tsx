@@ -9,7 +9,8 @@ type Filter = "all" | "dictation" | "command";
 
 /** "com.mitchellh.ghostty" → "Ghostty", "org.kde.konsole" → "Konsole". */
 function prettyApp(app: string) {
-  const last = app.replace(/\.desktop$/, "").split(".").pop() ?? app;
+  const parts = app.replace(/\.(desktop|py|sh|exe|appimage)$/i, "").split(".");
+  const last = parts[parts.length - 1] || app;
   return last.charAt(0).toUpperCase() + last.slice(1);
 }
 

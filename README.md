@@ -37,6 +37,8 @@ It works in every app — your browser, editor, terminal, chat, email — becaus
 - ✨ **Formatting you can say.** Optional smart formatting cleans up punctuation, “um”s and false starts, and follows spoken instructions in any language: “new paragraph”, “bullet milk, bullet eggs”, “make that bold”, “put this in a table”, “scratch that”.
 - 🗣️ **Command word.** Start a normal dictation with a word of your choice — *“Jarvis, make this formal”* — and it runs as a command.
 - 🔁 **Keep talking.** Start the next dictation while the previous one is still being processed; results are typed in the order you spoke.
+- 🖥️ **Terminal-aware.** Detects when a terminal has focus (Konsole, GNOME Terminal, kitty, Alacritty, Ghostty, WezTerm, …) and pastes with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> — perfect for dictating prompts to CLI tools.
+- 🛟 **Never lose your words.** If a transcription fails (say, your Wi-Fi drops), the recording is kept and can be retried with one click.
 - ⚙️ **Quick actions.** One-click prompts like *Fix grammar*, *Make formal* or *Translate to English* for the selected text — from the tray, the app, or the CLI.
 - 🫧 **A gorgeous, unobtrusive overlay.** A floating pill with a live waveform that never steals focus. On Wayland it's a true layer-shell surface.
 - 🔒 **Private by design.** Keys, settings and history stay on your computer. No telemetry. Temporary clipboard contents are marked so clipboard managers don't record them, and your clipboard is restored after pasting.
@@ -172,6 +174,7 @@ opendictate toggle            Start or stop dictation
 opendictate command           Start or stop a voice command
 opendictate stop              Stop recording and process it
 opendictate cancel            Cancel recording / processing
+opendictate retry             Retry the last recording whose transcription failed
 opendictate action <id>       Apply a quick action to the selection (fix, formal, shorter, english, bullets, explain, …)
 opendictate show [page]       Open the window (home, dictation, commands, providers, history, settings)
 opendictate --hidden          Start in the tray
@@ -189,7 +192,7 @@ opendictate --hidden          Start in the tray
 <details>
 <summary><b>Text isn't inserted, but I hear the sounds</b></summary>
 
-OpenDictate pastes with <kbd>Ctrl</kbd>+<kbd>V</kbd> by default. Terminals often use <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> — switch the *paste shortcut* in Settings → Output (<kbd>Shift</kbd>+<kbd>Insert</kbd> works almost everywhere on Linux). On Linux also check *Settings → Linux permissions*. The text is always left on your clipboard if pasting isn't possible.
+OpenDictate pastes with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> when it detects a terminal (KDE Plasma, Hyprland, Sway and X11; GNOME on Wayland doesn't tell apps which window is focused). If an app needs something else, pick a fixed *paste shortcut* in Settings → Output — <kbd>Shift</kbd>+<kbd>Insert</kbd> works almost everywhere on Linux. On Linux also check *Settings → Linux permissions*. The text is always left on your clipboard if pasting isn't possible.
 </details>
 
 <details>
