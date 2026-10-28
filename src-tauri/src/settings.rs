@@ -19,16 +19,12 @@ pub const DEFAULT_POLISH_PROMPT: &str = "You are a dictation formatter. The user
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct ProviderConfig {
     pub api_key: String,
     pub base_url: String,
 }
 
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self { api_key: String::new(), base_url: String::new() }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -79,16 +75,12 @@ impl ModelRef {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Replacement {
     pub from: String,
     pub to: String,
 }
 
-impl Default for Replacement {
-    fn default() -> Self {
-        Self { from: String::new(), to: String::new() }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

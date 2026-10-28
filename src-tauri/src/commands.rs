@@ -74,10 +74,8 @@ pub fn save_settings(app: AppHandle, engine: State<'_, Arc<Engine>>, state: Stat
 #[tauri::command]
 pub fn reset_settings(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_, AppState>) -> R<Settings> {
     let old = engine.settings.read().clone();
-    let mut fresh = Settings::default();
     // Keep keys and onboarding state; reset behaviour.
-    fresh.providers = old.providers;
-    fresh.onboarded = old.onboarded;
+    let fresh = Settings { providers: old.providers, onboarded: old.onboarded, ..Settings::default() };
     fresh.save(&state.settings_path).map_err(err)?;
     *engine.settings.write() = fresh.clone();
     apply_settings(&app, &engine, &state);

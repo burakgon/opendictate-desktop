@@ -943,6 +943,7 @@ impl Engine {
         Ok(Outcome::Done { preview: preview(&text), copied_only })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_command(
         &self,
         id: u64,

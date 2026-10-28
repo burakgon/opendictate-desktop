@@ -147,7 +147,8 @@ fn capture_thread(
     stop_rx: mpsc::Receiver<()>,
     ready_tx: mpsc::Sender<Result<()>>,
 ) -> Result<Captured> {
-    let setup = || -> Result<(cpal::Stream, Arc<Mutex<Vec<f32>>>, u32)> {
+    type Running = (cpal::Stream, Arc<Mutex<Vec<f32>>>, u32);
+    let setup = || -> Result<Running> {
         let device = find_input_device(device_name)?;
         let config = device.default_input_config().context("the microphone has no usable configuration")?;
         let sample_rate = config.sample_rate().0;
@@ -362,7 +363,7 @@ pub fn analyse(samples: &[f32]) -> Analysis {
 pub fn encode_wav(samples: &[f32], rate: u32) -> Result<Vec<u8>> {
     let peak = samples.iter().fold(0f32, |m, v| m.max(v.abs()));
     // Gentle normalisation: bring the peak to ~-1 dBFS, at most 8x gain.
-    let gain = if peak > 0.0 { (0.89 / peak).min(8.0).max(1.0) } else { 1.0 };
+    let gain = if peak > 0.0 { (0.89 / peak).clamp(1.0, 8.0) } else { 1.0 };
     let spec = hound::WavSpec { channels: 1, sample_rate: rate, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let mut cursor = Cursor::new(Vec::with_capacity(samples.len() * 2 + 44));
     {
@@ -432,10 +433,10 @@ fn synth(sound: Sound, rate: u32, volume: f32) -> Vec<f32> {
                 + (2.0 * std::f32::consts::PI * freq * 2.0 * t).sin() * 0.12 * env_d;
             out.push(v * env_a * env_d * volume * 0.35);
         }
-        out.extend(std::iter::repeat(0.0).take((rate as f32 * gap as f32 / 1000.0) as usize));
+        out.extend(std::iter::repeat_n(0.0, (rate as f32 * gap as f32 / 1000.0) as usize));
     }
     // Short fade tail so the device doesn't click.
-    out.extend(std::iter::repeat(0.0).take((rate as f32 * 0.03) as usize));
+    out.extend(std::iter::repeat_n(0.0, (rate as f32 * 0.03) as usize));
     out
 }
 
