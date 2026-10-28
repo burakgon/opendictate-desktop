@@ -75,35 +75,30 @@ fn user_listed_in_group(group: &str) -> bool {
 
 #[cfg(target_os = "linux")]
 const FIX_SCRIPT: &str = r#"set -e
-USER_NAME="$1"
-cat > /etc/udev/rules.d/80-opendictate-uinput.rules <<'RULES'
-# OpenDictate: let the logged-in user create a virtual keyboard to paste text.
+cat > /etc/udev/rules.d/70-opendictate.rules <<'RULES'
+# OpenDictate: give the user at the active seat access to input devices (global hotkeys)
+# and to uinput (pasting through a virtual keyboard). Must sort before 73-seat-late.rules.
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+KERNEL=="event*", SUBSYSTEM=="input", TAG+="uaccess"
 RULES
 echo uinput > /etc/modules-load.d/opendictate-uinput.conf
 modprobe uinput || true
 udevadm control --reload-rules || true
-udevadm trigger --subsystem-match=misc --action=change || true
-if [ -n "$USER_NAME" ] && getent group input >/dev/null; then
-  usermod -aG input "$USER_NAME"
-fi
+udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change || true
+udevadm settle || true
 "#;
 
-/// Grants access to /dev/uinput (paste) and adds the user to the `input` group (hotkeys).
+/// Installs a udev rule that gives the logged-in user (via logind's `uaccess`) access to
+/// keyboards (global hotkeys) and /dev/uinput (pasting). Takes effect immediately, no re-login.
 /// Runs through pkexec so the desktop shows its normal password prompt.
 #[cfg(target_os = "linux")]
-pub fn fix_permissions(include_input_group: bool) -> anyhow::Result<String> {
+pub fn fix_permissions(_include_input_group: bool) -> anyhow::Result<String> {
     use std::process::Command;
-    let user = if include_input_group { std::env::var("USER").unwrap_or_default() } else { String::new() };
-    let status = Command::new("pkexec").args(["sh", "-c", FIX_SCRIPT, "sh", &user]).status()?;
+    let status = Command::new("pkexec").args(["sh", "-c", FIX_SCRIPT]).status()?;
     if !status.success() {
         anyhow::bail!("the permission helper was cancelled or failed ({status})");
     }
-    Ok(if include_input_group {
-        "Done. Log out and back in once so the new group membership takes effect.".into()
-    } else {
-        "Done.".into()
-    })
+    Ok("Permissions granted. Shortcuts and pasting are ready.".into())
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -137,15 +132,19 @@ pub fn ensure_desktop_entry() {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "opendictate".into());
 
-    // A system-wide entry with our id wins; nothing to do.
+    let target = data_home.join("applications").join(&file_name);
+    // A system-wide entry with our id wins. Remove a stale one we generated earlier (e.g. from
+    // an AppImage or a dev build) so it doesn't shadow the packaged entry.
     if data_dirs.iter().any(|d| d.join("applications").join(&file_name).exists()) {
+        if fs::read_to_string(&target).map(|t| t.contains("X-OpenDictate-Generated=true")).unwrap_or(false) {
+            let _ = fs::remove_file(&target);
+        }
         return;
     }
     let packaged = data_dirs
         .iter()
         .any(|d| d.join("applications/opendictate.desktop").exists() || d.join("applications/OpenDictate.desktop").exists());
 
-    let target = data_home.join("applications").join(&file_name);
     if let Ok(existing) = fs::read_to_string(&target) {
         let ours = existing.contains("X-OpenDictate-Generated=true");
         let same_exe = existing.contains(&format!("Exec=\"{exe}\""));

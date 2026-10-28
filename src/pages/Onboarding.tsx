@@ -20,7 +20,7 @@ type Step = "welcome" | "provider" | "mic" | "permissions" | "try" | "done";
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const { settings, update, providers, system, refreshSystem } = useStore();
   const env = system?.environment;
-  const needsPermissions = env?.os === "linux" && (!env.uinput_access || (!env.input_access && !system?.hotkeys.ok));
+  const needsPermissions = env?.os === "linux" && (!env.uinput_access || !env.input_access);
   const steps: Step[] = ["welcome", "provider", "mic", ...(needsPermissions ? (["permissions"] as Step[]) : []), "try", "done"];
   const [step, setStep] = useState<Step>("welcome");
   const idx = steps.indexOf(step);
@@ -220,7 +220,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 </div>
                 <div className="flex items-center gap-2">
                   {env?.input_access ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-amber-400" />}
-                  Single-key shortcuts {env?.relogin_required && <span className="text-amber-300/80">(log out and back in to finish)</span>}
+                  Single-key shortcuts like Right Ctrl
                 </div>
               </div>
               <Button

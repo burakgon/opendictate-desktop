@@ -1,0 +1,26 @@
+# Maintainer: Burak Gon <burakgon12@gmail.com>
+pkgname=opendictate-desktop-bin
+_pkgname=opendictate
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Voice dictation and voice commands for your desktop - tap to dictate, hold to command. Bring your own models."
+arch=('x86_64')
+url="https://github.com/burakgon/opendictate-desktop"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'alsa-lib' 'gtk-layer-shell' 'hicolor-icon-theme')
+optdepends=('pipewire-pulse: choose a specific microphone in Settings'
+            'xorg-xprop: terminal detection on X11')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source=("$url/releases/download/v$pkgver/OpenDictate_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+  bsdtar -xf data.tar.gz -C "$pkgdir"
+  # Name the launcher after the app id so desktop portals recognise the app.
+  mv "$pkgdir/usr/share/applications/OpenDictate.desktop" \
+     "$pkgdir/usr/share/applications/io.github.burakgon.OpenDictate.desktop"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/licenses/$pkgname/LICENSE" <<'LICENSE'
+MIT License - see https://github.com/burakgon/opendictate-desktop/blob/main/LICENSE
+LICENSE
+}

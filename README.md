@@ -89,26 +89,30 @@ On first launch a short setup guides you through adding an API key, checking you
 
 ### Linux setup
 
-OpenDictate needs two things that Linux protects for good reasons, and the app offers a **one-click fix** for both (*Settings → Linux permissions*):
+OpenDictate needs two things that Linux protects for good reasons, and the app offers a **one-click fix** for both (*Settings → Linux permissions*, or the first-run setup). It installs a small udev rule that gives **the user sitting at the computer** (via systemd-logind's `uaccess`) access to:
 
-1. **Pasting into other apps** creates a virtual keyboard through `/dev/uinput`. Most desktops already allow this; otherwise the fix installs a small udev rule.
-2. **Single-key shortcuts** (like a lone Right Ctrl) read your keyboard through `/dev/input`, which requires membership in the `input` group. Log out and back in once after the fix.
+1. **`/dev/uinput`**, a virtual keyboard to paste into other apps. Many desktops already allow this.
+2. **`/dev/input`**, to see your shortcut key. This is what makes single-key shortcuts (a lone Right Ctrl, a mouse side button) and true hold-to-talk possible.
 
-Prefer not to join the `input` group? Choose **Desktop portal** as the shortcut engine: shortcuts are registered with KDE Plasma / GNOME 48+ / Hyprland through the XDG GlobalShortcuts portal (key combinations only). Or bind `opendictate toggle` in your desktop's own shortcut settings.
+It takes effect immediately, no log-out needed.
+
+Prefer not to grant keyboard access? Choose **Desktop portal** as the shortcut engine: shortcuts are registered with KDE Plasma / GNOME 48+ / Hyprland through the XDG GlobalShortcuts portal (key combinations only). Or bind `opendictate toggle` in your desktop's own shortcut settings.
 
 <details>
 <summary>Manual setup commands</summary>
 
 ```sh
-# Paste into apps (virtual keyboard)
-echo 'KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"' \
-  | sudo tee /etc/udev/rules.d/80-opendictate-uinput.rules
+printf '%s\n' \
+  'KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"' \
+  'KERNEL=="event*", SUBSYSTEM=="input", TAG+="uaccess"' \
+  | sudo tee /etc/udev/rules.d/70-opendictate.rules
 echo uinput | sudo tee /etc/modules-load.d/opendictate-uinput.conf
-sudo modprobe uinput && sudo udevadm control --reload-rules && sudo udevadm trigger
-
-# Single-key shortcuts (log out and back in afterwards)
-sudo usermod -aG input "$USER"
+sudo modprobe uinput
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change
 ```
+
+The file name must sort before `73-seat-late.rules`. Alternatively, add yourself to the `input` group and log in again.
 
 The floating overlay uses [`gtk-layer-shell`](https://github.com/wmww/gtk-layer-shell) when it's installed (`gtk-layer-shell` on Arch/Fedora, `libgtk-layer-shell0` on Debian/Ubuntu).
 </details>

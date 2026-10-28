@@ -26,7 +26,12 @@ import {
   type OverlayPosition,
   type PasteShortcut,
 } from "../lib/api";
-import { sameAccelerator } from "../lib/keys";
+import { isModifier, sameAccelerator, splitAccelerator } from "../lib/keys";
+
+const isModifierOnly = (accel: string) => {
+  const parts = splitAccelerator(accel);
+  return parts.length > 0 && parts.every(isModifier);
+};
 import { useStore } from "../lib/store";
 
 const MODES: { value: HotkeyMode; label: string; title: string }[] = [
@@ -167,6 +172,12 @@ export function SettingsPage() {
         >
           <Segmented<HotkeyBackend> size="sm" value={hk.backend} onChange={(v) => update((s) => void (s.hotkeys.backend = v))} options={backendOptions} />
         </Row>
+        {system?.hotkeys.backend === "portal" && (isModifierOnly(hk.dictate) || isModifierOnly(hk.command)) && (
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12.5px] text-amber-100/85">
+            The desktop portal can't bind a single modifier key like Right Ctrl. Grant keyboard access in <b>Linux permissions</b> below, or
+            choose a combination such as Ctrl+Alt+Space.
+          </div>
+        )}
         <div className="mt-4 flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-[12.5px] text-white/50">
           <Terminal className="mt-0.5 size-4 shrink-0 text-white/40" />
           <div>
@@ -199,14 +210,8 @@ export function SettingsPage() {
             />
             <Check
               ok={!!env?.input_access}
-              label="Read shortcut keys (input group)"
-              hint={
-                env?.input_access
-                  ? "Single-key shortcuts like Right Ctrl work"
-                  : env?.relogin_required
-                    ? "Log out and back in to finish setup"
-                    : "Optional — without it the desktop portal is used"
-              }
+              label="Read shortcut keys (/dev/input)"
+              hint={env?.input_access ? "Single-key shortcuts like Right Ctrl work" : "Optional — without it the desktop portal is used"}
             />
             <Check
               ok={!!env?.overlay_available}
