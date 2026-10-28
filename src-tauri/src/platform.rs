@@ -174,3 +174,29 @@ pub fn ensure_desktop_entry() {
 
 #[cfg(not(target_os = "linux"))]
 pub fn ensure_desktop_entry() {}
+
+/// Opens the desktop's own keyboard-shortcut settings (where portal shortcuts are assigned).
+pub fn open_shortcut_settings() -> anyhow::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+        let candidates: &[(&str, &[&str])] = if desktop.contains("KDE") {
+            &[("systemsettings", &["kcm_keys"]), ("kcmshell6", &["kcm_keys"])]
+        } else if desktop.contains("GNOME") {
+            &[("gnome-control-center", &["keyboard"])]
+        } else {
+            &[("systemsettings", &["kcm_keys"]), ("gnome-control-center", &["keyboard"])]
+        };
+        for (cmd, args) in candidates {
+            if Command::new(cmd).args(*args).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        anyhow::bail!("couldn't find your desktop's shortcut settings")
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(())
+    }
+}

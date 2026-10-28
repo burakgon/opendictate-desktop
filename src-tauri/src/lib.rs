@@ -183,6 +183,7 @@ pub fn run() {
             commands::fix_permissions,
             commands::show_window,
             commands::pause_hotkeys,
+            commands::open_shortcut_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building OpenDictate");

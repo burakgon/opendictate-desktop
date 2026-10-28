@@ -172,6 +172,14 @@ export function SettingsPage() {
         >
           <Segmented<HotkeyBackend> size="sm" value={hk.backend} onChange={(v) => update((s) => void (s.hotkeys.backend = v))} options={backendOptions} />
         </Row>
+        {system?.hotkeys.backend === "portal" && (
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-[12.5px] text-white/55">
+            <span>With the desktop portal, your desktop owns the keys: confirm or change them in its shortcut settings (look for “OpenDictate”).</span>
+            <Button size="sm" variant="secondary" onClick={() => api.openShortcutSettings().catch((e) => toast(errorText(e), "error"))}>
+              Open shortcut settings
+            </Button>
+          </div>
+        )}
         {system?.hotkeys.backend === "portal" && (isModifierOnly(hk.dictate) || isModifierOnly(hk.command)) && (
           <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12.5px] text-amber-100/85">
             The desktop portal can't bind a single modifier key like Right Ctrl. Grant keyboard access in <b>Linux permissions</b> below, or

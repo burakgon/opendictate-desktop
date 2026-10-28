@@ -286,3 +286,8 @@ pub fn show_window(app: AppHandle) {
 pub fn pause_hotkeys(engine: State<'_, Arc<Engine>>, paused: bool) {
     engine.paused.store(paused, Ordering::Relaxed);
 }
+
+#[tauri::command]
+pub fn open_shortcut_settings() -> R<()> {
+    platform::open_shortcut_settings().map_err(|e| format!("{e:#}"))
+}

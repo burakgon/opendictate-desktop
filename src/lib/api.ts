@@ -200,6 +200,7 @@ export const api = {
   micTest: (start: boolean, device?: string) => invoke<void>("mic_test", { start, device }),
   fixPermissions: (inputGroup: boolean) => invoke<string>("fix_permissions", { inputGroup }),
   pauseHotkeys: (paused: boolean) => invoke<void>("pause_hotkeys", { paused }),
+  openShortcutSettings: () => invoke<void>("open_shortcut_settings"),
 };
 
 /** Subscribes to a backend event for the lifetime of the component. */
