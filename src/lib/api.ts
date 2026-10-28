@@ -78,6 +78,7 @@ export interface Settings {
     sound_volume: number;
     max_seconds: number;
     trim_silence: boolean;
+    pause_media: boolean;
   };
   output: {
     method: OutputMethod;

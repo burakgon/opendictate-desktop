@@ -545,6 +545,9 @@ impl Engine {
         }
         self.schedule(id, TimerKind::MaxDuration, Duration::from_secs(settings.audio.max_seconds.max(5) as u64));
 
+        if settings.audio.pause_media {
+            tauri::async_runtime::spawn(crate::media::pause_playing());
+        }
         // Pre-open the TLS connection while the user speaks.
         if let Ok(ep) = Endpoint::resolve(&settings.providers, &settings.dictation.stt.provider) {
             let http = self.http.clone();
@@ -585,6 +588,7 @@ impl Engine {
         let (id, mode, had_feedback) = match previous {
             Phase::Recording(s) => {
                 self.recorder.cancel();
+                tauri::async_runtime::spawn(crate::media::resume_paused());
                 (s.id, s.mode, s.feedback)
             }
             Phase::Idle => {
@@ -642,6 +646,7 @@ impl Engine {
                 Phase::Idle => return,
             }
         };
+        tauri::async_runtime::spawn(crate::media::resume_paused());
         let captured = match self.recorder.stop() {
             Ok(c) => c,
             Err(e) => {

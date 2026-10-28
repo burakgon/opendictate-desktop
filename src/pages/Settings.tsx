@@ -249,6 +249,11 @@ export function SettingsPage() {
         <Row label="Level check" description="Speak and watch the bars move.">
           <MicTest />
         </Row>
+        {os === "linux" && (
+          <Row label="Pause media while recording" description="Pauses music and videos (any MPRIS player) while you speak, and resumes them afterwards.">
+            <Toggle checked={settings.audio.pause_media} onChange={(v) => update((s) => void (s.audio.pause_media = v))} />
+          </Row>
+        )}
         <Row label="Maximum length" description="Recording stops automatically after this long.">
           <Select
             className="w-40"

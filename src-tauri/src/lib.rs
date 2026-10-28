@@ -5,6 +5,7 @@ mod audio;
 mod commands;
 mod engine;
 mod history;
+mod media;
 mod hotkeys;
 mod output;
 mod overlay;

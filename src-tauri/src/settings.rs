@@ -259,11 +259,13 @@ pub struct AudioSettings {
     pub sound_volume: f32,
     pub max_seconds: u32,
     pub trim_silence: bool,
+    /// Pause playing music/videos (MPRIS) while recording, resume afterwards.
+    pub pause_media: bool,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
-        Self { input_device: String::new(), sounds: true, sound_volume: 0.5, max_seconds: 300, trim_silence: true }
+        Self { input_device: String::new(), sounds: true, sound_volume: 0.5, max_seconds: 300, trim_silence: true, pause_media: false }
     }
 }
 
