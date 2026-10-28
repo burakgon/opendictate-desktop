@@ -1,0 +1,52 @@
+[package]
+name = "opendictate"
+version = "0.1.0"
+description = "Voice dictation and voice commands for your desktop, powered by the models you choose."
+authors = ["Burak Gon"]
+license = "MIT"
+repository = "https://github.com/burakgon/opendictate"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "opendictate_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+reqwest = { version = "0.13", features = ["json", "multipart"] }
+cpal = "0.15"
+hound = "3.5"
+arboard = { version = "3", features = ["wayland-data-control"] }
+base64 = "0.22"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.13"
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
+gtk = "0.18"
+libloading = "0.8"
+futures-util = "0.3"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+enigo = "0.6"
+tauri-plugin-global-shortcut = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

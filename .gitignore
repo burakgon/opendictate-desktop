@@ -1,0 +1,21 @@
+# Secrets — never commit API keys
+keys/
+*.key
+.env
+.env.*
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

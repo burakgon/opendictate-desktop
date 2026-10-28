@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-ink-950: #07070c;
+  --color-ink-900: #0c0c14;
+  --color-ink-850: #11111b;
+  --color-ink-800: #161622;
+  --color-ink-700: #1f1f2e;
+  --color-ink-600: #2a2a3d;
+
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+
+  --animate-pulse-ring: pulse-ring 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-fade-in: fade-in 0.35s ease-out both;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(0.85);
+      opacity: 0.7;
+    }
+    100% {
+      transform: scale(2.1);
+      opacity: 0;
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: #e7e7f0;
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable],
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.45);
+}
+
+/* Window frame */
+.app-frame {
+  background:
+    radial-gradient(1200px 600px at -10% -20%, rgba(139, 92, 246, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 110% 120%, rgba(6, 182, 212, 0.12), transparent 60%),
+    #0b0b13;
+}
+
+.maximized .app-frame {
+  border-radius: 0 !important;
+}
+
+/* Scrollbars */
+.scroll-area {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.text-gradient {
+  background: linear-gradient(100deg, #c4b5fd 0%, #a5b4fc 40%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 55%, #06b6d4 100%);
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0%, #fff 50%, rgba(255, 255, 255, 0.45) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  background: linear-gradient(180deg, #2a2a3d, #1d1d2b);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom-width: 3px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Overlay                                                                                  */
+/* ---------------------------------------------------------------------------------------- */
+
+.overlay-body {
+  margin: 0;
+  background: transparent !important;
+  overflow: hidden;
+  height: 100vh;
+}
