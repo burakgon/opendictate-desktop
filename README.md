@@ -11,7 +11,8 @@ Open source, private by design, and powered by the models *you* choose.
 
 [![Release](https://img.shields.io/github/v/release/burakgon/opendictate-desktop?style=flat-square&color=8b5cf6)](https://github.com/burakgon/opendictate-desktop/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-06b6d4?style=flat-square)](LICENSE)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20·%20macOS%20·%20Windows-6366f1?style=flat-square)](#install)
+[![Linux](https://img.shields.io/badge/Linux-tested-22c55e?style=flat-square&logo=linux&logoColor=white)](#install)
+[![macOS · Windows](https://img.shields.io/badge/macOS%20·%20Windows-experimental-f59e0b?style=flat-square)](#install)
 [![CI](https://img.shields.io/github/actions/workflow/status/burakgon/opendictate-desktop/ci.yml?style=flat-square&label=CI)](https://github.com/burakgon/opendictate-desktop/actions)
 [![Stars](https://img.shields.io/github/stars/burakgon/opendictate-desktop?style=flat-square&color=f59e0b)](https://github.com/burakgon/opendictate-desktop/stargazers)
 
@@ -83,15 +84,17 @@ Grab the latest build from the [**Releases page**](https://github.com/burakgon/o
 | Platform | Package |
 | --- | --- |
 | **Linux** | `.AppImage` (any distro) · `.deb` (Ubuntu, Debian, Mint, Pop!_OS) · `.rpm` (Fedora, openSUSE) · Arch: [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
-| **macOS** | `.dmg` (Apple Silicon and Intel) |
-| **Windows** | `-setup.exe` |
+| **macOS** ⚠️ experimental | `.dmg` (Apple Silicon and Intel) |
+| **Windows** ⚠️ experimental | `-setup.exe` or `.msi` |
 
 On first launch a short setup guides you through adding an API key, checking your microphone and trying your shortcut. OpenDictate then lives in your system tray.
 
-> [!NOTE]
-> Linux is the primary, battle-tested platform. macOS and Windows builds are produced by CI from the same code — feedback and bug reports are very welcome.
+> [!WARNING]
+> **macOS and Windows are experimental and untested.** Linux is where OpenDictate is developed and tested end to end. The macOS and Windows builds compile and pass the unit tests in CI, but nobody has run them on a real machine yet. Known risks: the overlay may take keyboard focus and swallow the pasted text (turn it off in Settings → Interface if that happens), and terminal detection and media pausing are Linux-only. If you try them, please [open an issue](https://github.com/burakgon/opendictate-desktop/issues) with what worked and what didn't.
 >
-> **macOS:** the app isn't notarized yet. Open it once with right-click → *Open*, then allow **Microphone** and **Accessibility** access (needed to paste into other apps).
+> **macOS:** the app isn't signed or notarized. If macOS refuses to open it, right-click → *Open*, or run `xattr -cr /Applications/OpenDictate.app`. Then allow **Microphone** and **Accessibility** access (needed to paste into other apps).
+>
+> **Windows:** SmartScreen will warn about the unsigned installer (*More info* → *Run anyway*). Text can't be pasted into apps running as administrator.
 
 ### Linux setup
 
