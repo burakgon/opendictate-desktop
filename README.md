@@ -65,7 +65,7 @@ It works in every app — your browser, editor, terminal, chat, email — becaus
 | **Double-tap** the key | Same as hold — handy for keys that can't be held, like the Copilot key. |
 | <kbd>Esc</kbd> | Cancel the current recording or request. |
 
-The default key is <kbd>Right Ctrl</kbd> on Linux, <kbd>⌥ Space</kbd> on macOS and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> on Windows. You can pick any key — or separate keys for dictation and commands, each in *toggle*, *hold* or *tap-or-hold* mode.
+On Linux the default is a single key, <kbd>Right Ctrl</kbd>, for both. On macOS the defaults are <kbd>⌥ Space</kbd> (dictate) and <kbd>⌥ ⇧ Space</kbd> (command); on Windows <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>. You can pick any keys — one shared key, or separate keys for dictation and commands, each in *toggle*, *hold* or *tap-or-hold* mode.
 
 **Examples of voice commands**
 
