@@ -47,6 +47,22 @@ pub fn create(app: &AppHandle, position: OverlayPosition) -> tauri::Result<Webvi
 #[cfg(target_os = "linux")]
 static LAYER_SHELL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether the overlay can be shown without risking focus theft. On Wayland compositors without
+/// layer-shell (GNOME) a regular window can't stay on top and might take keyboard focus, which
+/// would swallow the pasted text - so the overlay stays off there (sounds + tray still work).
+pub fn available() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+            && std::env::var("GDK_BACKEND").map(|b| !b.starts_with("x11")).unwrap_or(true);
+        uses_layer_shell() || !wayland || std::env::var_os("OPENDICTATE_FORCE_OVERLAY").is_some()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
 pub fn uses_layer_shell() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -80,6 +96,9 @@ fn place(window: &WebviewWindow, position: OverlayPosition) {
 }
 
 pub fn show(app: &AppHandle, position: OverlayPosition) {
+    if !available() {
+        return;
+    }
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = app2.get_webview_window(LABEL) {

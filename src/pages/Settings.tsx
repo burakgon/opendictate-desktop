@@ -208,7 +208,11 @@ export function SettingsPage() {
                     : "Optional — without it the desktop portal is used"
               }
             />
-            <Check ok={!!env?.layer_shell} label="Overlay above all windows" hint={env?.layer_shell ? "Using wlr-layer-shell" : "Using a regular window"} />
+            <Check
+              ok={!!env?.overlay_available}
+              label="Overlay above all windows"
+              hint={env?.layer_shell ? "Using wlr-layer-shell" : env?.overlay_available ? "Using an always-on-top window" : "Not supported by this desktop"}
+            />
             <Check ok={!!env?.session_type} label={`Session: ${env?.session_type || "unknown"} · ${env?.desktop || "unknown desktop"}`} />
           </div>
         </Section>
@@ -302,8 +306,19 @@ export function SettingsPage() {
       </Section>
 
       <Section icon={<Monitor className="size-4.5" />} title="Interface">
-        <Row label="Show overlay" description="A small pill with a live waveform while listening.">
-          <Toggle checked={settings.general.show_overlay} onChange={(v) => update((s) => void (s.general.show_overlay = v))} />
+        <Row
+          label="Show overlay"
+          description={
+            env && !env.overlay_available
+              ? "Your desktop can't keep a floating pill above other windows without stealing focus (GNOME on Wayland), so OpenDictate uses sounds and the tray icon instead."
+              : "A small pill with a live waveform while listening."
+          }
+        >
+          <Toggle
+            checked={settings.general.show_overlay && (env?.overlay_available ?? true)}
+            disabled={env ? !env.overlay_available : false}
+            onChange={(v) => update((s) => void (s.general.show_overlay = v))}
+          />
         </Row>
         <Row label="Overlay position">
           <Segmented<OverlayPosition>

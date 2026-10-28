@@ -14,6 +14,8 @@ pub struct Environment {
     /// Linux: the user is in the `input` group but this session predates it (re-login needed).
     pub relogin_required: bool,
     pub layer_shell: bool,
+    /// The floating overlay can be used on this desktop.
+    pub overlay_available: bool,
 }
 
 pub fn environment() -> Environment {
@@ -37,6 +39,7 @@ pub fn environment() -> Environment {
             uinput_access,
             relogin_required: !input_access && user_listed_in_group("input"),
             layer_shell: crate::overlay::uses_layer_shell(),
+            overlay_available: crate::overlay::available(),
         }
     }
     #[cfg(not(target_os = "linux"))]
@@ -49,6 +52,7 @@ pub fn environment() -> Environment {
             uinput_access: true,
             relogin_required: false,
             layer_shell: false,
+            overlay_available: true,
         }
     }
 }

@@ -159,6 +159,7 @@ export interface SystemStatus {
     uinput_access: boolean;
     relogin_required: boolean;
     layer_shell: boolean;
+    overlay_available: boolean;
   };
   hotkeys: {
     backend: string;
