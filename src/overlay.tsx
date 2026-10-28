@@ -132,7 +132,12 @@ function Overlay() {
           <AlertCircle className="size-4" />
         </div>
       );
-      body = <span className="line-clamp-2 text-[12.5px] leading-snug text-rose-100/90">{status.message}</span>;
+      body = (
+        <div className="min-w-0">
+          <div className="line-clamp-2 text-[12.5px] leading-snug text-rose-100/90">{status.message}</div>
+          {status.retryable && <div className="mt-0.5 text-[11px] text-white/45">Your recording was kept — retry from the tray menu.</div>}
+        </div>
+      );
       break;
     default:
       icon = <div className="size-8 rounded-full bg-white/[0.06]" />;

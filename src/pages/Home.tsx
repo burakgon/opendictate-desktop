@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Clock, Gauge, MessageSquareText, Mic, Sparkles, Wand2, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock, Gauge, MessageSquareText, Mic, RotateCcw, Sparkles, Wand2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useEvent, type HistoryEntry, type Stats, type Status } from "../lib/api";
 import { sameAccelerator } from "../lib/keys";
@@ -65,6 +65,19 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
 
   return (
     <div className="animate-fade-in">
+      {status?.phase === "error" && (
+        <div className="mb-5 flex items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.07] px-4 py-3">
+          <AlertTriangle className="size-4 shrink-0 text-rose-300" />
+          <div className="min-w-0 flex-1 text-[13.5px] text-rose-100/90">
+            <span className="line-clamp-2">{status.message}</span>
+          </div>
+          {status.retryable && (
+            <Button size="sm" variant="secondary" icon={<RotateCcw className="size-3.5" />} onClick={() => api.trigger("retry")}>
+              Retry
+            </Button>
+          )}
+        </div>
+      )}
       {issues.length > 0 && (
         <div className="mb-5 space-y-2">
           {issues.map((i) => (

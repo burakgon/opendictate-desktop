@@ -36,6 +36,7 @@ Commands (sent to the running instance; it is started if needed):
   command              Start or stop a voice command
   stop                 Stop recording and process it
   cancel               Cancel recording / processing
+  retry                Retry the last recording whose transcription failed
   action <id>          Apply a quick action to the selected text (e.g. `action fix`)
   show [page]          Open the main window (home, dictation, commands, providers, history, settings)
   quit                 Quit OpenDictate
@@ -56,6 +57,7 @@ fn handle_args(app: &AppHandle, args: &[String]) -> bool {
         Some("command") => send(Trigger::ToggleCommand),
         Some("stop") => send(Trigger::Stop),
         Some("cancel") => send(Trigger::Cancel),
+        Some("retry") => send(Trigger::Retry),
         Some("action") => match it.next() {
             Some(id) => send(Trigger::QuickAction(id.clone())),
             None => return false,
@@ -162,6 +164,7 @@ pub fn run() {
             commands::save_settings,
             commands::reset_settings,
             commands::default_settings,
+            commands::default_prompts,
             commands::providers_info,
             commands::list_models,
             commands::test_provider,

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------------------------
 // Types (mirror src-tauri/src/settings.rs and friends)
@@ -121,6 +121,7 @@ export interface Status {
   session: number;
   selection_chars: number | null;
   step: "transcribing" | "thinking" | "polishing" | "inserting" | null;
+  retryable: boolean;
 }
 
 export interface HistoryEntry {
@@ -178,6 +179,7 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
   resetSettings: () => invoke<Settings>("reset_settings"),
   defaultSettings: () => invoke<Settings>("default_settings"),
+  defaultPrompts: () => invoke<{ polish: string; selection: string; generate: string }>("default_prompts"),
   providers: () => invoke<ProviderInfo[]>("providers_info"),
   listModels: (provider: ProviderId, kind: "stt" | "llm") => invoke<ModelInfo[]>("list_models", { provider, kind }),
   testProvider: (provider: ProviderId, apiKey: string, baseUrl: string) =>
@@ -190,7 +192,7 @@ export const api = {
   clearHistory: () => invoke<void>("history_clear"),
   stats: () => invoke<Stats>("stats"),
   lastStatus: () => invoke<Status | null>("last_status"),
-  trigger: (action: "dictate" | "command" | "stop" | "cancel" | "action", arg?: string) =>
+  trigger: (action: "dictate" | "command" | "stop" | "cancel" | "retry" | "action", arg?: string) =>
     invoke<void>("trigger", { action, arg }),
   copy: (text: string) => invoke<void>("copy_text", { text }),
   playSound: (name: string) => invoke<void>("play_sound", { name }),
@@ -221,4 +223,15 @@ export function errorText(e: unknown): string {
   if (typeof e === "string") return e;
   if (e && typeof e === "object" && "message" in e) return String((e as { message: unknown }).message);
   return String(e);
+}
+
+/** Built-in prompts, loaded once (custom prompts are stored only when edited). */
+let promptCache: Promise<{ polish: string; selection: string; generate: string }> | null = null;
+export function useDefaultPrompts() {
+  const [p, setP] = useState<{ polish: string; selection: string; generate: string } | null>(null);
+  useEffect(() => {
+    promptCache ??= api.defaultPrompts();
+    promptCache.then(setP);
+  }, []);
+  return p;
 }

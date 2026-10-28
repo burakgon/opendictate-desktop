@@ -18,7 +18,7 @@ import {
 import { useState } from "react";
 import { ModelPicker } from "../components/ModelPicker";
 import { Button, Field, Input, Keycaps, PageHeader, Row, Section, Segmented, Slider, TextArea, Toggle } from "../components/ui";
-import { api, type QuickAction, type Reasoning, type SelectionMethod } from "../lib/api";
+import { api, useDefaultPrompts, type QuickAction, type Reasoning, type SelectionMethod } from "../lib/api";
 import { sameAccelerator } from "../lib/keys";
 import { useStore } from "../lib/store";
 
@@ -49,6 +49,7 @@ export function Commands({ navigate }: { navigate: (p: string) => void }) {
   const os = system?.environment.os;
   const shared = sameAccelerator(settings.hotkeys.dictate, settings.hotkeys.command);
   const [prompts, setPrompts] = useState(false);
+  const defaults = useDefaultPrompts();
 
   const setAction = (i: number, fn: (a: QuickAction) => void) => update((s) => fn(s.command.quick_actions[i]));
 
@@ -216,22 +217,30 @@ export function Commands({ navigate }: { navigate: (p: string) => void }) {
           {prompts && (
             <div className="space-y-4">
               <Field label="When text is selected">
-                <TextArea rows={6} value={c.prompt_selection} onChange={(e) => update((s) => void (s.command.prompt_selection = e.target.value))} />
+                <TextArea
+                  rows={6}
+                  value={c.prompt_selection || defaults?.selection || ""}
+                  onChange={(e) => update((s) => void (s.command.prompt_selection = e.target.value))}
+                />
               </Field>
               <Field label="When nothing is selected">
-                <TextArea rows={5} value={c.prompt_generate} onChange={(e) => update((s) => void (s.command.prompt_generate = e.target.value))} />
+                <TextArea
+                  rows={5}
+                  value={c.prompt_generate || defaults?.generate || ""}
+                  onChange={(e) => update((s) => void (s.command.prompt_generate = e.target.value))}
+                />
               </Field>
               <Button
                 size="sm"
                 variant="ghost"
                 icon={<RotateCcw className="size-3.5" />}
-                onClick={async () => {
-                  const d = await api.defaultSettings();
+                disabled={!c.prompt_selection && !c.prompt_generate}
+                onClick={() =>
                   update((s) => {
-                    s.command.prompt_selection = d.command.prompt_selection;
-                    s.command.prompt_generate = d.command.prompt_generate;
-                  });
-                }}
+                    s.command.prompt_selection = "";
+                    s.command.prompt_generate = "";
+                  })
+                }
               >
                 Restore defaults
               </Button>

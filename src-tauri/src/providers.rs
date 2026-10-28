@@ -386,6 +386,12 @@ pub async fn chat(
 
 /// Strips wrappers models like to add even when told not to.
 pub fn clean_llm_output(text: &str) -> String {
+    let cleaned = strip_wrappers(text);
+    // Markdown-style hard breaks ("two trailing spaces") look like stray spaces when typed.
+    cleaned.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
+}
+
+fn strip_wrappers(text: &str) -> String {
     let mut t = text.trim();
     // Drop <think>...</think> blocks emitted inline by some reasoning models.
     let owned;
@@ -507,5 +513,6 @@ mod tests {
         assert_eq!(clean_llm_output("```text\nhello world\n```"), "hello world");
         assert_eq!(clean_llm_output("<think>hmm</think>\n\nAnswer"), "Answer");
         assert_eq!(clean_llm_output("  plain  "), "plain");
+        assert_eq!(clean_llm_output("Red leaves  \nAutumn wind  \nEarth"), "Red leaves\nAutumn wind\nEarth");
     }
 }

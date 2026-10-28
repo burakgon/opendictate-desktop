@@ -2,7 +2,7 @@ import { AudioLines, BookA, Plus, Replace, RotateCcw, Sparkles, Trash2 } from "l
 import { useState } from "react";
 import { ModelPicker } from "../components/ModelPicker";
 import { Button, Field, Input, PageHeader, Row, Section, Select, TextArea, Toggle } from "../components/ui";
-import { api } from "../lib/api";
+import { useDefaultPrompts } from "../lib/api";
 import { LANGUAGES } from "../lib/catalog";
 import { useStore } from "../lib/store";
 
@@ -12,6 +12,7 @@ export function Dictation({ navigate }: { navigate: (p: string) => void }) {
   const { settings, update } = useStore();
   const d = settings.dictation;
   const [showPrompt, setShowPrompt] = useState(false);
+  const defaults = useDefaultPrompts();
 
   return (
     <div>
@@ -67,7 +68,11 @@ export function Dictation({ navigate }: { navigate: (p: string) => void }) {
             </Button>
           </div>
           {showPrompt && (
-            <TextArea rows={6} value={d.polish_prompt} onChange={(e) => update((s) => void (s.dictation.polish_prompt = e.target.value))} />
+            <TextArea
+              rows={9}
+              value={d.polish_prompt || defaults?.polish || ""}
+              onChange={(e) => update((s) => void (s.dictation.polish_prompt = e.target.value))}
+            />
           )}
         </div>
       </Section>
@@ -116,15 +121,13 @@ export function Dictation({ navigate }: { navigate: (p: string) => void }) {
         <Row label="Trim silence" description="Cut silence at the start and end before uploading — faster and cheaper.">
           <Toggle checked={settings.audio.trim_silence} onChange={(v) => update((s) => void (s.audio.trim_silence = v))} />
         </Row>
-        <Row label="Reset polish prompt" description="Restore the built-in cleanup instructions.">
+        <Row label="Reset formatting prompt" description={d.polish_prompt ? "You're using a custom prompt." : "Using the built-in prompt."}>
           <Button
             size="sm"
             variant="ghost"
             icon={<RotateCcw className="size-3.5" />}
-            onClick={async () => {
-              const defaults = await api.defaultSettings();
-              update((s) => void (s.dictation.polish_prompt = defaults.dictation.polish_prompt));
-            }}
+            disabled={!d.polish_prompt}
+            onClick={() => update((s) => void (s.dictation.polish_prompt = ""))}
           >
             Reset
           </Button>

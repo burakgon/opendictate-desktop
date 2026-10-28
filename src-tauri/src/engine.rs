@@ -44,6 +44,8 @@ pub enum Trigger {
     Stop,
     Cancel,
     QuickAction(String),
+    /// Re-run the last recording whose transcription failed.
+    Retry,
 }
 
 #[derive(Debug)]
@@ -163,6 +165,16 @@ pub struct Status {
     pub selection_chars: Option<usize>,
     /// Pipeline step while processing: transcribing | thinking | inserting
     pub step: Option<&'static str>,
+    /// The recording was kept and can be retried.
+    pub retryable: bool,
+}
+
+/// A recording whose transcription failed, kept so it can be retried.
+#[derive(Clone)]
+struct FailedJob {
+    wav: Arc<Vec<u8>>,
+    secs: f32,
+    mode: Mode,
 }
 
 pub struct Engine {
@@ -187,6 +199,7 @@ pub struct Engine {
     turns: Arc<Turnstile>,
     /// Serialises everything that touches the clipboard or presses keys.
     io_lock: tokio::sync::Mutex<()>,
+    failed: Mutex<Option<FailedJob>>,
 }
 
 const FEEDBACK_DELAY_MS: u64 = 130;
@@ -217,6 +230,7 @@ impl Engine {
             inflight: Mutex::new(HashMap::new()),
             turns: Arc::new(Turnstile::default()),
             io_lock: tokio::sync::Mutex::new(()),
+            failed: Mutex::new(None),
         });
         (engine, rx)
     }
@@ -279,7 +293,7 @@ impl Engine {
     }
 
     fn status(&self, phase: &'static str, mode: Mode, session: u64) -> Status {
-        Status { phase, mode, message: None, preview: None, session, selection_chars: None, step: None }
+        Status { phase, mode, message: None, preview: None, session, selection_chars: None, step: None, retryable: false }
     }
 
     fn schedule(&self, session: u64, kind: TimerKind, after: Duration) {
@@ -444,6 +458,7 @@ impl Engine {
             }
             Trigger::Cancel => self.cancel(true),
             Trigger::QuickAction(id) => self.quick_action(id),
+            Trigger::Retry => self.retry(),
         }
     }
 
@@ -598,6 +613,7 @@ impl Engine {
         self.sound(Sound::Error);
         let mut st = self.status("error", mode, id);
         st.message = Some(message);
+        st.retryable = self.failed.lock().is_some();
         self.emit_status(st);
         let settings = self.settings.read().clone();
         if settings.general.show_overlay {
@@ -722,7 +738,8 @@ impl Engine {
         }
     }
 
-    async fn transcribe(&self, settings: &Settings, captured: Captured) -> Result<Option<(String, f32)>> {
+    /// Resamples, trims and encodes a recording. `None` when there is no speech in it.
+    fn prepare_audio(settings: &Settings, captured: Captured) -> Result<Option<(Arc<Vec<u8>>, f32)>> {
         let captured = match std::env::var("OPENDICTATE_TEST_AUDIO") {
             Ok(path) if !path.is_empty() => audio::decode_wav(&std::fs::read(&path)?)?,
             _ => captured,
@@ -734,20 +751,41 @@ impl Engine {
         }
         let slice = if settings.audio.trim_silence { &pcm[analysis.start..analysis.end] } else { &pcm[..] };
         let secs = slice.len() as f32 / audio::TARGET_RATE as f32;
-        let wav = audio::encode_wav(slice, audio::TARGET_RATE)?;
+        Ok(Some((Arc::new(audio::encode_wav(slice, audio::TARGET_RATE)?), secs)))
+    }
+
+    /// Transcribes a prepared recording. On failure the audio is kept for [`Trigger::Retry`].
+    async fn transcribe(&self, settings: &Settings, wav: Arc<Vec<u8>>, secs: f32, mode: Mode) -> Result<String> {
         let d = &settings.dictation;
-        let ep = Endpoint::resolve(&settings.providers, &d.stt.provider)?;
-        let language = if d.language.is_empty() || d.language == "auto" { None } else { Some(d.language.as_str()) };
-        let vocab = d.vocabulary.trim();
         let started = Instant::now();
-        let text = providers::transcribe(
-            &self.http,
-            &ep,
-            SttRequest { model: &d.stt.model, wav, language, prompt: if vocab.is_empty() { None } else { Some(vocab) } },
-        )
-        .await?;
-        log::info!("transcribed {:.1}s of audio in {} ms", secs, started.elapsed().as_millis());
-        Ok(Some((text, secs)))
+        let result = async {
+            let ep = Endpoint::resolve(&settings.providers, &d.stt.provider)?;
+            let language = if d.language.is_empty() || d.language == "auto" { None } else { Some(d.language.as_str()) };
+            let vocab = d.vocabulary.trim();
+            providers::transcribe(
+                &self.http,
+                &ep,
+                SttRequest {
+                    model: &d.stt.model,
+                    wav: wav.as_ref().clone(),
+                    language,
+                    prompt: if vocab.is_empty() { None } else { Some(vocab) },
+                },
+            )
+            .await
+        }
+        .await;
+        match result {
+            Ok(text) => {
+                log::info!("transcribed {:.1}s of audio in {} ms", secs, started.elapsed().as_millis());
+                *self.failed.lock() = None;
+                Ok(text)
+            }
+            Err(e) => {
+                *self.failed.lock() = Some(FailedJob { wav, secs, mode });
+                Err(e)
+            }
+        }
     }
 
     async fn llm(&self, settings: &Settings, model: &ModelRef, system: &str, user: String, temperature: f32) -> Result<String> {
@@ -790,6 +828,18 @@ impl Engine {
     }
 
     async fn process(self: Arc<Self>, id: u64, mode: Mode, captured: Captured, turn: Turn) -> Result<Outcome> {
+        let settings = self.settings.read().clone();
+        let prepared = {
+            let settings = settings.clone();
+            tokio::task::spawn_blocking(move || Self::prepare_audio(&settings, captured)).await??
+        };
+        let Some((wav, secs)) = prepared else {
+            return Ok(Outcome::Nothing("No speech detected".into()));
+        };
+        self.process_wav(id, mode, wav, secs, turn).await
+    }
+
+    async fn process_wav(self: Arc<Self>, id: u64, mode: Mode, wav: Arc<Vec<u8>>, secs: f32, turn: Turn) -> Result<Outcome> {
         let started = Instant::now();
         let settings = self.settings.read().clone();
         self.step(id, mode, "transcribing", None);
@@ -797,18 +847,13 @@ impl Engine {
         if mode == Mode::Command {
             // Read the selection while the transcription is in flight.
             let selection_fut = self.capture_selection(settings.command.selection_method);
-            let transcript_fut = self.transcribe(&settings, captured);
+            let transcript_fut = self.transcribe(&settings, wav, secs, mode);
             let (selection, transcript) = tokio::join!(selection_fut, transcript_fut);
-            let Some((instruction, secs)) = transcript? else {
-                return Ok(Outcome::Nothing("No speech detected".into()));
-            };
-            return self.run_command(id, &settings, instruction, selection, secs, started, &turn).await;
+            return self.run_command(id, &settings, transcript?, selection, secs, started, &turn).await;
         }
 
         // Dictation.
-        let Some((raw, secs)) = self.transcribe(&settings, captured).await? else {
-            return Ok(Outcome::Nothing("No speech detected".into()));
-        };
+        let raw = self.transcribe(&settings, wav, secs, mode).await?;
         if settings.command.enabled {
             if let Some(instruction) = strip_trigger_word(&raw, &settings.command.trigger_word) {
                 // "Jarvis, make this formal": the dictation turns into a command.
@@ -827,7 +872,7 @@ impl Engine {
             self.step(id, mode, "polishing", None);
             // Formatting is a refinement: if it's slow or fails, insert the raw transcript.
             let budget = Duration::from_secs(6 + history::count_words(&text) as u64 / 40);
-            let polish = self.llm(&settings, &d.polish_model, &d.polish_prompt, format!("<transcript>\n{text}\n</transcript>"), 0.0);
+            let polish = self.llm(&settings, &d.polish_model, settings.polish_prompt(), format!("<transcript>\n{text}\n</transcript>"), 0.0);
             match tokio::time::timeout(budget, polish).await {
                 Ok(Ok(t)) if !t.trim().is_empty() => {
                     text = t;
@@ -880,10 +925,10 @@ impl Engine {
         let c = &settings.command;
         let (system, user) = match &selection {
             Some(sel) => (
-                c.prompt_selection.clone(),
+                settings.selection_prompt().to_string(),
                 format!("<instruction>\n{instruction}\n</instruction>\n\n<selected_text>\n{sel}\n</selected_text>"),
             ),
-            None => (c.prompt_generate.clone(), instruction.clone()),
+            None => (settings.generate_prompt().to_string(), instruction.clone()),
         };
         let result = self.llm(settings, &c.llm, &system, user, c.temperature).await?;
         if result.trim().is_empty() {
@@ -913,6 +958,22 @@ impl Engine {
         let _ = self.app.emit("od://history", &saved);
     }
 
+    /// Re-runs the last recording whose transcription failed.
+    fn retry(self: &Arc<Self>) {
+        let Some(job) = self.failed.lock().take() else {
+            log::info!("nothing to retry");
+            return;
+        };
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        log::info!("retrying a {:.1}s recording as session {id}", job.secs);
+        let settings = self.settings.read().clone();
+        if settings.general.show_overlay && self.recording_id().is_none() {
+            overlay::show(&self.app, settings.general.overlay_position);
+        }
+        let FailedJob { wav, secs, mode } = job;
+        self.spawn_processing(id, mode, move |engine, turn| async move { engine.process_wav(id, mode, wav, secs, turn).await });
+    }
+
     /// Applies a saved prompt to the selected text without speaking.
     fn quick_action(self: &Arc<Self>, action_id: String) {
         let settings = self.settings.read().clone();
@@ -939,7 +1000,7 @@ impl Engine {
             };
             let c = &settings.command;
             let user = format!("<instruction>\n{}\n</instruction>\n\n<selected_text>\n{selection}\n</selected_text>", action.prompt);
-            let result = engine.llm(&settings, &c.llm, &c.prompt_selection, user, c.temperature).await?;
+            let result = engine.llm(&settings, &c.llm, settings.selection_prompt(), user, c.temperature).await?;
             let (copied_only, app) = engine.insert(&result, &settings, &turn).await?;
             engine.record(Entry {
                 kind: "action".into(),

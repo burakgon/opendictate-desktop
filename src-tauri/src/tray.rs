@@ -23,6 +23,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<Wry>> 
     let dictate = MenuItem::with_id(app, "dictate", "Start / Stop Dictation", true, None::<&str>)?;
     let command = MenuItem::with_id(app, "command", "Voice Command", settings.command.enabled, None::<&str>)?;
     let cancel = MenuItem::with_id(app, "cancel", "Cancel", true, None::<&str>)?;
+    let retry = MenuItem::with_id(app, "retry", "Retry Last Recording", true, None::<&str>)?;
     let actions = Submenu::with_id(app, "actions", "Apply to Selection", !settings.command.quick_actions.is_empty())?;
     for a in &settings.command.quick_actions {
         actions.append(&MenuItem::with_id(app, format!("action:{}", a.id), &a.name, true, None::<&str>)?)?;
@@ -36,6 +37,7 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<Wry>> 
             &dictate,
             &command,
             &cancel,
+            &retry,
             &PredefinedMenuItem::separator(app)?,
             &actions,
             &PredefinedMenuItem::separator(app)?,
@@ -76,6 +78,7 @@ pub fn create(app: &AppHandle, settings: &Settings) -> tauri::Result<()> {
                 "dictate" => send(Trigger::ToggleDictate),
                 "command" => send(Trigger::ToggleCommand),
                 "cancel" => send(Trigger::Cancel),
+                "retry" => send(Trigger::Retry),
                 "open" => show_main(app, None),
                 "history" => show_main(app, Some("history")),
                 "quit" => app.exit(0),

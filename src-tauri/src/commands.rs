@@ -90,6 +90,23 @@ pub fn default_settings() -> Settings {
     Settings::default()
 }
 
+#[derive(Serialize)]
+pub struct DefaultPrompts {
+    pub polish: &'static str,
+    pub selection: &'static str,
+    pub generate: &'static str,
+}
+
+#[tauri::command]
+pub fn default_prompts() -> DefaultPrompts {
+    use crate::settings::*;
+    DefaultPrompts {
+        polish: DEFAULT_POLISH_PROMPT,
+        selection: DEFAULT_COMMAND_PROMPT_SELECTION,
+        generate: DEFAULT_COMMAND_PROMPT_GENERATE,
+    }
+}
+
 #[tauri::command]
 pub fn providers_info() -> Vec<ProviderInfo> {
     providers::PROVIDERS.to_vec()
@@ -189,6 +206,7 @@ pub fn trigger(engine: State<'_, Arc<Engine>>, action: String, arg: Option<Strin
         "command" => Trigger::ToggleCommand,
         "stop" => Trigger::Stop,
         "cancel" => Trigger::Cancel,
+        "retry" => Trigger::Retry,
         "action" => Trigger::QuickAction(arg.ok_or("missing action id")?),
         _ => return Err(format!("unknown action '{action}'")),
     };
