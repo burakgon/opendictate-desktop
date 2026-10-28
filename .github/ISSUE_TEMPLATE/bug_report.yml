@@ -1,0 +1,34 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and desktop
+      placeholder: e.g. Fedora 43, KDE Plasma 6.8 (Wayland) / macOS 15 / Windows 11
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenDictate version
+      placeholder: e.g. 0.1.0
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and models
+      placeholder: e.g. OpenRouter, openai/whisper-large-v3-turbo + anthropic/claude-haiku-5.5
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run `RUST_LOG=opendictate_lib=debug opendictate` and paste the relevant part. Remove any API keys!
+      render: text
