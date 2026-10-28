@@ -7,6 +7,12 @@ import { timeAgo } from "./Home";
 
 type Filter = "all" | "dictation" | "command";
 
+/** "com.mitchellh.ghostty" → "Ghostty", "org.kde.konsole" → "Konsole". */
+function prettyApp(app: string) {
+  const last = app.replace(/\.desktop$/, "").split(".").pop() ?? app;
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
 function dayLabel(ts: number) {
   const d = new Date(ts);
   const today = new Date();
@@ -130,6 +136,7 @@ export function History() {
                     <div className="selectable whitespace-pre-wrap text-[14px] leading-relaxed text-white/85">{e.text}</div>
                     <div className="mt-1.5 flex flex-wrap gap-x-3 text-[11.5px] text-white/30">
                       <span>{timeAgo(e.ts)}</span>
+                      {e.app && <span>→ {prettyApp(e.app)}</span>}
                       {e.audio_secs > 0 && <span>{e.audio_secs.toFixed(1)}s audio</span>}
                       <span>{(e.latency_ms / 1000).toFixed(1)}s turnaround</span>
                       <span>{e.words} words</span>

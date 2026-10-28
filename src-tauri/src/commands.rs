@@ -124,8 +124,8 @@ pub async fn test_provider(engine: State<'_, Arc<Engine>>, provider: String, api
 }
 
 #[tauri::command]
-pub fn input_devices() -> Vec<String> {
-    audio::list_input_devices()
+pub async fn input_devices() -> Vec<audio::InputDevice> {
+    tauri::async_runtime::spawn_blocking(audio::list_input_devices).await.unwrap_or_default()
 }
 
 #[derive(Serialize)]

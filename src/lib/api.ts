@@ -34,11 +34,12 @@ export type HotkeyMode = "toggle" | "hold" | "hybrid";
 export type HotkeyBackend = "auto" | "evdev" | "portal" | "native" | "disabled";
 export type SelectionMethod = "copy" | "primary" | "none";
 export type OutputMethod = "paste" | "type" | "clipboard";
-export type PasteShortcut = "ctrl_v" | "ctrl_shift_v" | "shift_insert";
+export type PasteShortcut = "auto" | "ctrl_v" | "ctrl_shift_v" | "shift_insert";
 export type OverlayPosition = "bottom" | "top";
 export type Reasoning = "off" | "low" | "default";
 
 export interface Settings {
+  version: number;
   onboarded: boolean;
   providers: Record<ProviderId, ProviderConfig>;
   dictation: {
@@ -135,6 +136,7 @@ export interface HistoryEntry {
   llm_model: string | null;
   words: number;
   inserted: boolean;
+  app: string | null;
 }
 
 export interface Stats {
@@ -180,7 +182,7 @@ export const api = {
   listModels: (provider: ProviderId, kind: "stt" | "llm") => invoke<ModelInfo[]>("list_models", { provider, kind }),
   testProvider: (provider: ProviderId, apiKey: string, baseUrl: string) =>
     invoke<number>("test_provider", { provider, apiKey, baseUrl }),
-  inputDevices: () => invoke<string[]>("input_devices"),
+  inputDevices: () => invoke<{ id: string; label: string }[]>("input_devices"),
   systemStatus: () => invoke<SystemStatus>("system_status"),
   reapplyHotkeys: () => invoke<SystemStatus["hotkeys"]>("reapply_hotkeys"),
   history: () => invoke<HistoryEntry[]>("history_list"),

@@ -11,6 +11,8 @@ use crate::settings::{OutputMethod, OutputSettings, PasteShortcut, SelectionMeth
 pub enum Chord {
     Paste(PasteShortcut),
     Copy,
+    /// Terminals copy with Ctrl+Shift+C (Ctrl+C would interrupt the running program).
+    CopyTerminal,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -57,10 +59,11 @@ mod keys {
 
         pub fn chord(&mut self, chord: Chord) -> Result<()> {
             let (mods, key): (&[KeyCode], KeyCode) = match chord {
-                Chord::Paste(PasteShortcut::CtrlV) => (&[KeyCode::KEY_LEFTCTRL], KeyCode::KEY_V),
+                Chord::Paste(PasteShortcut::CtrlV | PasteShortcut::Auto) => (&[KeyCode::KEY_LEFTCTRL], KeyCode::KEY_V),
                 Chord::Paste(PasteShortcut::CtrlShiftV) => (&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTSHIFT], KeyCode::KEY_V),
                 Chord::Paste(PasteShortcut::ShiftInsert) => (&[KeyCode::KEY_LEFTSHIFT], KeyCode::KEY_INSERT),
                 Chord::Copy => (&[KeyCode::KEY_LEFTCTRL], KeyCode::KEY_C),
+                Chord::CopyTerminal => (&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTSHIFT], KeyCode::KEY_C),
             };
             for m in mods {
                 self.key(*m, true)?;
@@ -108,13 +111,14 @@ mod keys {
             #[cfg(not(target_os = "macos"))]
             let primary = Key::Control;
             let (mods, key): (Vec<Key>, Key) = match chord {
-                Chord::Paste(PasteShortcut::CtrlV) => (vec![primary], Key::Unicode('v')),
+                Chord::Paste(PasteShortcut::CtrlV | PasteShortcut::Auto) => (vec![primary], Key::Unicode('v')),
                 Chord::Paste(PasteShortcut::CtrlShiftV) => (vec![primary, Key::Shift], Key::Unicode('v')),
                 #[cfg(not(target_os = "macos"))]
                 Chord::Paste(PasteShortcut::ShiftInsert) => (vec![Key::Shift], Key::Insert),
                 #[cfg(target_os = "macos")]
                 Chord::Paste(PasteShortcut::ShiftInsert) => (vec![primary], Key::Unicode('v')),
                 Chord::Copy => (vec![primary], Key::Unicode('c')),
+                Chord::CopyTerminal => (vec![primary, Key::Shift], Key::Unicode('c')),
             };
             let e = |r: Result<(), enigo::InputError>| r.map_err(|e| anyhow!("input simulation failed: {e:?}"));
             for m in &mods {
@@ -252,7 +256,7 @@ impl Output {
 
     /// Reads the text currently selected in the focused application.
     /// Returns the selection and the previous clipboard text (to restore later).
-    pub fn capture_selection(&self, method: SelectionMethod) -> (Option<String>, Option<String>) {
+    pub fn capture_selection(&self, method: SelectionMethod, terminal: bool) -> (Option<String>, Option<String>) {
         match method {
             SelectionMethod::None => (None, None),
             SelectionMethod::Primary => (self.get_primary().filter(|s| !s.trim().is_empty()), None),
@@ -266,7 +270,7 @@ impl Output {
                     return (None, previous);
                 }
                 thread::sleep(Duration::from_millis(40));
-                if let Err(e) = self.chord(Chord::Copy) {
+                if let Err(e) = self.chord(if terminal { Chord::CopyTerminal } else { Chord::Copy }) {
                     log::warn!("could not send the copy shortcut: {e:#}");
                     self.restore(previous.clone());
                     return (None, previous);
@@ -298,7 +302,7 @@ impl Output {
     }
 
     /// Inserts text at the cursor of the focused application.
-    pub fn insert(&self, text: &str, cfg: &OutputSettings) -> Result<InsertOutcome> {
+    pub fn insert(&self, text: &str, cfg: &OutputSettings, terminal: bool) -> Result<InsertOutcome> {
         if text.is_empty() {
             return Ok(InsertOutcome::Inserted);
         }
@@ -316,13 +320,13 @@ impl Output {
                         }
                     }
                 }
-                self.paste(text, cfg)
+                self.paste(text, cfg, terminal)
             }
-            OutputMethod::Paste => self.paste(text, cfg),
+            OutputMethod::Paste => self.paste(text, cfg, terminal),
         }
     }
 
-    fn paste(&self, text: &str, cfg: &OutputSettings) -> Result<InsertOutcome> {
+    fn paste(&self, text: &str, cfg: &OutputSettings, terminal: bool) -> Result<InsertOutcome> {
         if !self.ensure_keys() {
             // Leave the text on the clipboard so nothing is lost.
             self.set_clipboard(text)?;
@@ -336,7 +340,11 @@ impl Output {
         }
         // Let the compositor see the new clipboard owner before pasting.
         thread::sleep(Duration::from_millis(40));
-        self.chord(Chord::Paste(cfg.paste_shortcut))?;
+        let shortcut = match cfg.paste_shortcut {
+            PasteShortcut::Auto if terminal => PasteShortcut::CtrlShiftV,
+            other => other,
+        };
+        self.chord(Chord::Paste(shortcut))?;
         if cfg.restore_clipboard {
             // Apps read the clipboard asynchronously after the key press.
             thread::sleep(Duration::from_millis(350));

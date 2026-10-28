@@ -112,12 +112,26 @@ impl Recorder {
     }
 }
 
+/// Prefix for PipeWire/PulseAudio sources, recorded through the `pulse` ALSA device.
+const PULSE_PREFIX: &str = "pulse:";
+
 fn find_input_device(name: &str) -> Result<cpal::Device> {
     let host = cpal::default_host();
-    if !name.is_empty() {
+    let mut wanted = name.to_string();
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(source) = name.strip_prefix(PULSE_PREFIX) {
+            // libpulse picks the source from PULSE_SOURCE when the ALSA `pulse` device opens.
+            std::env::set_var("PULSE_SOURCE", source);
+            wanted = "pulse".into();
+        } else {
+            std::env::remove_var("PULSE_SOURCE");
+        }
+    }
+    if !wanted.is_empty() {
         if let Ok(devices) = host.input_devices() {
             for d in devices {
-                if d.name().map(|n| n == name).unwrap_or(false) {
+                if d.name().map(|n| n == wanted).unwrap_or(false) {
                     return Ok(d);
                 }
             }
@@ -223,20 +237,64 @@ where
     Ok(stream)
 }
 
-/// Lists input devices by name. The first entry is the default device.
-pub fn list_input_devices() -> Vec<String> {
-    let host = cpal::default_host();
-    let mut names: Vec<String> = Vec::new();
-    if let Ok(devices) = host.input_devices() {
-        for d in devices {
-            if let Ok(n) = d.name() {
-                if !names.contains(&n) {
-                    names.push(n);
-                }
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InputDevice {
+    pub id: String,
+    pub label: String,
+}
+
+/// Lists microphones. On Linux with PipeWire/PulseAudio these are the real sources (not ALSA
+/// plugin names); elsewhere the audio host's input devices.
+pub fn list_input_devices() -> Vec<InputDevice> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(sources) = pulse_sources() {
+            if !sources.is_empty() {
+                return sources;
             }
         }
     }
-    names
+    let host = cpal::default_host();
+    let mut out: Vec<InputDevice> = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for d in devices {
+            let Ok(n) = d.name() else { continue };
+            #[cfg(target_os = "linux")]
+            {
+                // Hide ALSA plugin pseudo-devices nobody wants to pick.
+                let useful = n == "pipewire" || n == "pulse" || ["sysdefault", "hw:", "plughw:", "front:"].iter().any(|p| n.starts_with(p));
+                if !useful {
+                    continue;
+                }
+            }
+            if n != "default" && !out.iter().any(|x| x.id == n) {
+                out.push(InputDevice { label: n.clone(), id: n });
+            }
+        }
+    }
+    out
+}
+
+#[cfg(target_os = "linux")]
+fn pulse_sources() -> Option<Vec<InputDevice>> {
+    let output = std::process::Command::new("pactl").args(["-f", "json", "list", "sources"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let list: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).ok()?;
+    Some(
+        list.iter()
+            .filter(|s| {
+                s.get("monitor_source").and_then(|m| m.as_str()).map(|m| m.is_empty()).unwrap_or(true)
+                    && s.pointer("/properties/device.class").and_then(|c| c.as_str()) != Some("monitor")
+            })
+            .filter_map(|s| {
+                let name = s.get("name")?.as_str()?;
+                let label = s.get("description").and_then(|d| d.as_str()).unwrap_or(name);
+                Some(InputDevice { id: format!("{PULSE_PREFIX}{name}"), label: label.to_string() })
+            })
+            .collect(),
+    )
 }
 
 /// Low-pass + resample to 16 kHz using a box filter matched to the decimation ratio.

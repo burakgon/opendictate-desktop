@@ -24,6 +24,8 @@ pub struct Entry {
     pub llm_model: Option<String>,
     pub words: usize,
     pub inserted: bool,
+    /// Application the text was typed into, when known.
+    pub app: Option<String>,
 }
 
 impl Default for Entry {
@@ -41,6 +43,7 @@ impl Default for Entry {
             llm_model: None,
             words: 0,
             inserted: true,
+            app: None,
         }
     }
 }

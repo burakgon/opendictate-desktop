@@ -1,5 +1,6 @@
 //! OpenDictate - voice dictation and voice commands for the desktop.
 
+mod active_app;
 mod audio;
 mod commands;
 mod engine;

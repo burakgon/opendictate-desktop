@@ -285,6 +285,8 @@ pub enum OutputMethod {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PasteShortcut {
+    /// Ctrl+V, or Ctrl+Shift+V when a terminal has focus.
+    Auto,
     CtrlV,
     CtrlShiftV,
     ShiftInsert,
@@ -300,7 +302,7 @@ pub struct OutputSettings {
 
 impl Default for OutputSettings {
     fn default() -> Self {
-        Self { method: OutputMethod::Paste, paste_shortcut: PasteShortcut::CtrlV, restore_clipboard: true }
+        Self { method: OutputMethod::Paste, paste_shortcut: PasteShortcut::Auto, restore_clipboard: true }
     }
 }
 
@@ -335,9 +337,13 @@ impl Default for GeneralSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Bumped when settings need migrating; see [`Settings::migrate`].
+pub const SETTINGS_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub version: u32,
     pub onboarded: bool,
     pub providers: Providers,
     pub dictation: DictationSettings,
@@ -348,15 +354,52 @@ pub struct Settings {
     pub general: GeneralSettings,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            version: SETTINGS_VERSION,
+            onboarded: false,
+            providers: Providers::default(),
+            dictation: DictationSettings::default(),
+            command: CommandSettings::default(),
+            hotkeys: HotkeySettings::default(),
+            audio: AudioSettings::default(),
+            output: OutputSettings::default(),
+            general: GeneralSettings::default(),
+        }
+    }
+}
+
 impl Settings {
+    /// Upgrades settings written by older versions.
+    fn migrate(mut self) -> Self {
+        if self.version < 1 {
+            // 0.1.0 previews always pasted with Ctrl+V; "auto" also handles terminals.
+            if self.output.paste_shortcut == PasteShortcut::CtrlV {
+                self.output.paste_shortcut = PasteShortcut::Auto;
+            }
+        }
+        self.version = SETTINGS_VERSION;
+        self
+    }
+
     pub fn load(path: &PathBuf) -> Self {
-        match fs::read_to_string(path) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+        let parsed: Option<Settings> = fs::read_to_string(path).ok().map(|text| {
+            serde_json::from_str::<Settings>(&text).unwrap_or_else(|e| {
                 log::error!("settings file is invalid ({e}); keeping a backup and using defaults");
                 let _ = fs::copy(path, path.with_extension("json.bak"));
                 Settings::default()
-            }),
-            Err(_) => Settings::default(),
+            })
+        });
+        match parsed {
+            // A file without a version field predates versioning.
+            Some(s) => {
+                let text = fs::read_to_string(path).unwrap_or_default();
+                let versioned = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v.get("version").cloned()).is_some();
+                let s = if versioned { s } else { Settings { version: 0, ..s } };
+                s.migrate()
+            }
+            None => Settings::default(),
         }
     }
 
@@ -374,5 +417,26 @@ impl Settings {
         }
         fs::rename(&tmp, path)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_old_paste_shortcut() {
+        let dir = std::env::temp_dir().join(format!("od-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(&path, r#"{"output": {"paste_shortcut": "ctrl_v"}, "onboarded": true}"#).unwrap();
+        let s = Settings::load(&path);
+        assert_eq!(s.output.paste_shortcut, PasteShortcut::Auto);
+        assert!(s.onboarded);
+        assert_eq!(s.version, SETTINGS_VERSION);
+        // An explicit choice made after versioning is kept.
+        std::fs::write(&path, r#"{"version": 1, "output": {"paste_shortcut": "ctrl_v"}}"#).unwrap();
+        assert_eq!(Settings::load(&path).output.paste_shortcut, PasteShortcut::CtrlV);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

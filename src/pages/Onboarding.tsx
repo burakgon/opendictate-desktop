@@ -1,6 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ExternalLink, Mic, PartyPopper, ShieldCheck, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Keycaps, SecretInput, TextArea, cx, useToast } from "../components/ui";
 import { LevelBars } from "../components/Visuals";
 import { api, errorText, useEvent, type ProviderId } from "../lib/api";
@@ -10,7 +10,7 @@ import { useStore } from "../lib/store";
 
 const PROVIDER_CHOICES: { id: ProviderId; title: string; text: string }[] = [
   { id: "openrouter", title: "OpenRouter", text: "One key, every model. Recommended." },
-  { id: "openai", title: "OpenAI", text: "GPT-4o Transcribe + GPT models." },
+  { id: "openai", title: "OpenAI", text: "GPT Transcribe + GPT models." },
   { id: "groq", title: "Groq", text: "The fastest Whisper you can get." },
   { id: "mistral", title: "Mistral", text: "Voxtral speech + Mistral models." },
 ];
@@ -84,6 +84,32 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
   const [fixing, setFixing] = useState(false);
   const shared = sameAccelerator(settings.hotkeys.dictate, settings.hotkeys.command);
+
+  const finish = () => {
+    update((s) => void (s.onboarded = true));
+    onDone();
+  };
+
+  // Enter = the primary action of the current step.
+  const primary = useRef<() => void>(() => {});
+  primary.current = () => {
+    if (step === "provider") {
+      if (testResult?.ok) next();
+      else if (key.trim() && !testing) testKey();
+    } else if (step === "done") finish();
+    else next();
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+      const t = e.target as HTMLElement;
+      if (t.tagName === "TEXTAREA" || t.tagName === "BUTTON") return;
+      e.preventDefault();
+      primary.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="app-frame relative flex h-full flex-col overflow-hidden rounded-[14px] border border-white/10">
@@ -257,10 +283,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 variant="primary"
                 size="lg"
                 className="mt-8"
-                onClick={() => {
-                  update((s) => void (s.onboarded = true));
-                  onDone();
-                }}
+                onClick={finish}
               >
                 Start dictating
               </Button>

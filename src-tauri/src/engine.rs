@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 use crate::{
+    active_app,
     audio::{self, Captured, Recorder, Sound},
     history::{self, Entry, History},
     hotkeys::{HotkeyEvent, Slot},
@@ -759,15 +760,19 @@ impl Engine {
         Ok(out)
     }
 
-    async fn insert(&self, text: &str, settings: &Settings, turn: &Turn) -> Result<bool> {
+    /// Types `text` into the focused app. Returns (copied_only, app id).
+    async fn insert(&self, text: &str, settings: &Settings, turn: &Turn) -> Result<(bool, Option<String>)> {
         turn.wait().await;
         let _io = self.io_lock.lock().await;
         self.wait_keys_released().await;
+        let app = active_app::active_app().await;
+        let terminal = app.as_deref().map(active_app::is_terminal).unwrap_or(false);
+        log::debug!("inserting into {app:?} (terminal: {terminal})");
         let output = self.output.clone();
         let text = text.to_string();
         let cfg = settings.output.clone();
-        let outcome = tokio::task::spawn_blocking(move || output.insert(&text, &cfg)).await??;
-        Ok(outcome == InsertOutcome::CopiedOnly)
+        let outcome = tokio::task::spawn_blocking(move || output.insert(&text, &cfg, terminal)).await??;
+        Ok((outcome == InsertOutcome::CopiedOnly, app))
     }
 
     async fn capture_selection(&self, method: SelectionMethod) -> Option<String> {
@@ -776,8 +781,12 @@ impl Engine {
         }
         let _io = self.io_lock.lock().await;
         self.wait_keys_released().await;
+        let terminal = match method {
+            SelectionMethod::Copy => active_app::active_app().await.as_deref().map(active_app::is_terminal).unwrap_or(false),
+            _ => false,
+        };
         let output = self.output.clone();
-        tokio::task::spawn_blocking(move || output.capture_selection(method).0).await.ok().flatten()
+        tokio::task::spawn_blocking(move || output.capture_selection(method, terminal).0).await.ok().flatten()
     }
 
     async fn process(self: Arc<Self>, id: u64, mode: Mode, captured: Captured, turn: Turn) -> Result<Outcome> {
@@ -837,7 +846,7 @@ impl Engine {
             text.push(' ');
         }
         self.step(id, mode, "inserting", None);
-        let copied_only = self.insert(&text, &settings, &turn).await?;
+        let (copied_only, app) = self.insert(&text, &settings, &turn).await?;
         self.record(Entry {
             kind: "dictation".into(),
             text: text.trim_end().to_string(),
@@ -847,6 +856,7 @@ impl Engine {
             stt_model: d.stt.model.clone(),
             llm_model,
             inserted: !copied_only,
+            app,
             ..Default::default()
         });
         Ok(Outcome::Done { preview: preview(&text), copied_only })
@@ -880,7 +890,7 @@ impl Engine {
             return Err(anyhow!("The model returned an empty answer"));
         }
         self.step(id, mode, "inserting", None);
-        let copied_only = self.insert(&result, settings, turn).await?;
+        let (copied_only, app) = self.insert(&result, settings, turn).await?;
         self.record(Entry {
             kind: "command".into(),
             text: result.clone(),
@@ -891,6 +901,7 @@ impl Engine {
             stt_model: settings.dictation.stt.model.clone(),
             llm_model: Some(c.llm.model.clone()),
             inserted: !copied_only,
+            app,
             ..Default::default()
         });
         Ok(Outcome::Done { preview: preview(&result), copied_only })
@@ -929,7 +940,7 @@ impl Engine {
             let c = &settings.command;
             let user = format!("<instruction>\n{}\n</instruction>\n\n<selected_text>\n{selection}\n</selected_text>", action.prompt);
             let result = engine.llm(&settings, &c.llm, &c.prompt_selection, user, c.temperature).await?;
-            let copied_only = engine.insert(&result, &settings, &turn).await?;
+            let (copied_only, app) = engine.insert(&result, &settings, &turn).await?;
             engine.record(Entry {
                 kind: "action".into(),
                 text: result.clone(),
@@ -938,6 +949,7 @@ impl Engine {
                 latency_ms: started.elapsed().as_millis() as u64,
                 llm_model: Some(c.llm.model.clone()),
                 inserted: !copied_only,
+                app,
                 ..Default::default()
             });
             Ok(Outcome::Done { preview: preview(&result), copied_only })

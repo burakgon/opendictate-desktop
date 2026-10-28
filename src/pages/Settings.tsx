@@ -77,7 +77,7 @@ function Check({ ok, label, hint }: { ok: boolean; label: string; hint?: string 
 
 export function SettingsPage() {
   const { settings, update, system, refreshSystem } = useStore();
-  const [devices, setDevices] = useState<string[]>([]);
+  const [devices, setDevices] = useState<{ id: string; label: string }[]>([]);
   const [autostart, setAutostart] = useState(false);
   const [fixing, setFixing] = useState(false);
   const toast = useToast();
@@ -215,12 +215,18 @@ export function SettingsPage() {
       )}
 
       <Section icon={<Mic className="size-4.5" />} title="Microphone">
-        <Row label="Input device" description="“Default” follows your system's sound settings.">
+        <Row label="Input device" description="“System default” follows your system's sound settings.">
           <Select
             className="w-72"
             value={settings.audio.input_device}
             onChange={(v) => update((s) => void (s.audio.input_device = v))}
-            options={[{ value: "", label: "Default" }, ...devices.map((d) => ({ value: d, label: d }))]}
+            options={[
+              { value: "", label: "System default" },
+              ...devices.map((d) => ({ value: d.id, label: d.label })),
+              ...(settings.audio.input_device && !devices.some((d) => d.id === settings.audio.input_device)
+                ? [{ value: settings.audio.input_device, label: `${settings.audio.input_device} (not connected)` }]
+                : []),
+            ]}
           />
         </Row>
         <Row label="Level check" description="Speak and watch the bars move.">
@@ -270,12 +276,20 @@ export function SettingsPage() {
             ]}
           />
         </Row>
-        <Row label="Paste shortcut" description="Terminals usually want Ctrl+Shift+V. Shift+Insert works almost everywhere on Linux.">
+        <Row
+          label="Paste shortcut"
+          description={
+            settings.output.paste_shortcut === "auto"
+              ? "Auto uses Ctrl+V, and Ctrl+Shift+V (and Ctrl+Shift+C to read selections) when a terminal has focus."
+              : "Terminals usually want Ctrl+Shift+V. Shift+Insert works almost everywhere on Linux."
+          }
+        >
           <Segmented<PasteShortcut>
             size="sm"
             value={settings.output.paste_shortcut}
             onChange={(v) => update((s) => void (s.output.paste_shortcut = v))}
             options={[
+              { value: "auto", label: "Auto" },
               { value: "ctrl_v", label: os === "macos" ? "⌘V" : "Ctrl+V" },
               { value: "ctrl_shift_v", label: os === "macos" ? "⌘⇧V" : "Ctrl+Shift+V" },
               { value: "shift_insert", label: "Shift+Insert" },
