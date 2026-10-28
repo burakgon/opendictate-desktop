@@ -141,7 +141,8 @@ pub fn run() {
             commands::apply_settings(&handle, &engine, &state);
         }
 
-        let hidden = args.iter().any(|a| a == "--hidden") || (current.general.start_hidden && current.onboarded);
+        // Never hide the first-run setup, even when launched with --hidden at login.
+        let hidden = current.onboarded && (args.iter().any(|a| a == "--hidden") || current.general.start_hidden);
         let acted = handle_args(&handle, &args);
         if !hidden && !acted {
             tray::show_main(&handle, None);
