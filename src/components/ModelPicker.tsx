@@ -77,6 +77,7 @@ export function ModelPicker({
   }, [query, suggestions, models]);
 
   const currentLabel = suggestions.find((s) => s.id === value.model)?.label;
+  const priceOf = (id: string) => models?.find((m) => m.id === id)?.price ?? null;
 
   const pick = (id: string) => {
     onChange({ ...value, model: id });
@@ -154,7 +155,10 @@ export function ModelPicker({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-[13.5px] text-white/90">{s.label}</div>
-                      <div className="truncate font-mono text-[11.5px] text-white/35">{s.id}</div>
+                      <div className="truncate font-mono text-[11.5px] text-white/35">
+                        {s.id}
+                        {priceOf(s.id) && <span className="ml-2 font-sans text-white/30">· {priceOf(s.id)}</span>}
+                      </div>
                     </div>
                     <div className="flex gap-1">
                       {s.tags?.map((t) => (
@@ -180,7 +184,11 @@ export function ModelPicker({
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-white/75">{m.id}</span>
-                    {m.name !== m.id && <span className="ml-3 max-w-[45%] truncate text-[12px] text-white/35">{m.name}</span>}
+                    {m.price ? (
+                      <span className="ml-3 shrink-0 text-[11.5px] text-white/35">{m.price}</span>
+                    ) : (
+                      m.name !== m.id && <span className="ml-3 max-w-[45%] truncate text-[12px] text-white/35">{m.name}</span>
+                    )}
                   </button>
                 ))}
                 {error && <div className="px-3 py-3 text-[12.5px] text-rose-300/90">{error}</div>}

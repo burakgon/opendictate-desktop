@@ -417,6 +417,23 @@ fn strip_wrappers(text: &str) -> String {
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    /// Human-readable price, when the provider publishes comparable pricing.
+    pub price: Option<String>,
+}
+
+/// "$0.10 / $0.50" per million input/output tokens, from OpenRouter's per-token prices.
+fn token_price(m: &Value) -> Option<String> {
+    let per_m = |key: &str| -> Option<f64> {
+        let v = m.pointer(&format!("/pricing/{key}"))?;
+        let x = v.as_str().and_then(|s| s.parse::<f64>().ok()).or_else(|| v.as_f64())?;
+        (x >= 0.0).then_some(x * 1_000_000.0)
+    };
+    let (i, o) = (per_m("prompt")?, per_m("completion")?);
+    if i == 0.0 && o == 0.0 {
+        return Some("free".into());
+    }
+    let fmt = |x: f64| if x >= 10.0 { format!("${x:.0}") } else if x >= 1.0 { format!("${x:.2}") } else { format!("${x:.3}").trim_end_matches('0').to_string() };
+    Some(format!("{} / {} per M tokens", fmt(i), fmt(o)))
 }
 
 /// Lists models for a provider. `kind` is "stt" or "llm".
@@ -450,7 +467,8 @@ pub async fn list_models(http: &reqwest::Client, ep: &Endpoint, kind: &str) -> R
                     }
                 }
             }
-            Some(ModelInfo { id, name })
+            let price = if ep.info.id == "openrouter" && kind == "llm" { token_price(m) } else { None };
+            Some(ModelInfo { id, name, price })
         })
         .filter(|m| {
             let id = m.id.to_lowercase();
@@ -492,6 +510,17 @@ pub async fn test_provider(http: &reqwest::Client, ep: &Endpoint) -> Result<usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_token_prices() {
+        let m = json!({"pricing": {"prompt": "0.0000001", "completion": "0.0000005"}});
+        assert_eq!(token_price(&m).as_deref(), Some("$0.1 / $0.5 per M tokens"));
+        let m = json!({"pricing": {"prompt": "0.000002", "completion": "0.00001"}});
+        assert_eq!(token_price(&m).as_deref(), Some("$2.00 / $10 per M tokens"));
+        let m = json!({"pricing": {"prompt": "0", "completion": "0"}});
+        assert_eq!(token_price(&m).as_deref(), Some("free"));
+        assert_eq!(token_price(&json!({"pricing": {"prompt": "-1", "completion": "-1"}})), None);
+    }
 
     #[test]
     fn normalizes_pasted_endpoints() {

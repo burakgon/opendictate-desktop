@@ -108,6 +108,7 @@ export interface ProviderInfo {
 export interface ModelInfo {
   id: string;
   name: string;
+  price: string | null;
 }
 
 export type Mode = "dictate" | "command" | "pending" | "action";

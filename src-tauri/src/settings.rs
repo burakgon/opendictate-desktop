@@ -263,7 +263,7 @@ pub struct AudioSettings {
 
 impl Default for AudioSettings {
     fn default() -> Self {
-        Self { input_device: String::new(), sounds: true, sound_volume: 0.5, max_seconds: 600, trim_silence: true }
+        Self { input_device: String::new(), sounds: true, sound_volume: 0.5, max_seconds: 300, trim_silence: true }
     }
 }
 
