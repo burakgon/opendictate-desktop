@@ -154,7 +154,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
-                    // Keep running in the tray.
+                    // Hide instead of destroying: WebKitGTK keeps a destroyed view's web process
+                    // alive, so re-creating the window each time would leak memory.
                     api.prevent_close();
                     let _ = window.hide();
                 }

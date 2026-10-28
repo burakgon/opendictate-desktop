@@ -13,22 +13,7 @@
   "app": {
     "withGlobalTauri": false,
     "macOSPrivateApi": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "OpenDictate",
-        "width": 1120,
-        "height": 760,
-        "minWidth": 920,
-        "minHeight": 620,
-        "center": true,
-        "visible": false,
-        "decorations": false,
-        "transparent": true,
-        "shadow": true,
-        "resizable": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
@@ -49,10 +34,14 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libgtk-layer-shell0"]
+        "depends": [
+          "libgtk-layer-shell0"
+        ]
       },
       "rpm": {
-        "depends": ["gtk-layer-shell"]
+        "depends": [
+          "gtk-layer-shell"
+        ]
       },
       "appimage": {
         "bundleMediaFramework": false

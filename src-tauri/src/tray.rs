@@ -49,6 +49,8 @@ fn build_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<Wry>> 
     )
 }
 
+/// Shows the main window, creating it on first use: when OpenDictate starts hidden in the tray
+/// (e.g. at login) no web view is loaded until the window is actually opened.
 pub fn show_main(app: &AppHandle, route: Option<&str>) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
@@ -58,6 +60,28 @@ pub fn show_main(app: &AppHandle, route: Option<&str>) {
             use tauri::Emitter;
             let _ = w.emit("od://navigate", r);
         }
+        return;
+    }
+    let url = match route {
+        Some(r) => format!("index.html#{r}"),
+        None => "index.html".to_string(),
+    };
+    let built = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(url.into()))
+        .title("OpenDictate")
+        .inner_size(1120.0, 760.0)
+        .min_inner_size(920.0, 620.0)
+        .center()
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .resizable(true)
+        .visible(true)
+        .build();
+    match built {
+        Ok(w) => {
+            let _ = w.set_focus();
+        }
+        Err(e) => log::error!("could not open the main window: {e}"),
     }
 }
 

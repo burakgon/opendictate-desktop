@@ -25,7 +25,10 @@ const NAV: { id: Page; label: string; icon: ReactNode }[] = [
 
 function Shell() {
   const { settings, system, saveError } = useStore();
-  const [page, setPage] = useState<Page>("home");
+  const [page, setPage] = useState<Page>(() => {
+    const h = window.location.hash.slice(1);
+    return NAV.some((n) => n.id === h) ? (h as Page) : "home";
+  });
   const [status, setStatus] = useState<Status | null>(null);
   const [onboarding, setOnboarding] = useState(!settings.onboarded);
 
