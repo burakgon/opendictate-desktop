@@ -11,6 +11,7 @@ All notable changes to OpenDictate are documented here.
 - Clear message when the microphone delivers digital silence (muted or wrong input).
 
 ### Changed
+- Rate-limited (429) and transient upstream errors are retried automatically with backoff.
 - The main window is created on first use: OpenDictate started in the tray (e.g. at login) no longer loads it, saving ~200 MB of memory.
 
 ## [0.1.0] - 2026-10-28
