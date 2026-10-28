@@ -43,8 +43,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       setTestResult({ ok: true, text: `Connected — ${n} models available.` });
       let llm = LLM_SUGGESTIONS[provider]?.[0]?.id;
       if (!llm) {
+        // No curated pick: prefer a capable general model from the live list.
         const list = await api.listModels(provider, "llm").catch(() => []);
-        llm = list[0]?.id;
+        const prefer = [/gpt-oss-120b/, /llama-3\.3-70b/, /gpt-oss/, /llama|qwen|mistral|gemma|kimi/];
+        llm = prefer.map((re) => list.find((m) => re.test(m.id))).find(Boolean)?.id ?? list[0]?.id;
       }
       update((s) => {
         const stt = STT_SUGGESTIONS[provider]?.[0]?.id;
