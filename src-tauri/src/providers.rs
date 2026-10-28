@@ -206,42 +206,80 @@ pub struct SttRequest<'a> {
     pub prompt: Option<&'a str>,
 }
 
+/// Statuses worth retrying: rate limits and transient upstream failures.
+fn retryable(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504 | 529)
+}
+
+/// How long to wait before attempt `attempt` (1-based), honouring a provider's hint.
+async fn backoff(resp: reqwest::Response, attempt: u32) -> Duration {
+    let header = resp
+        .headers()
+        .get("retry-after")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<f64>().ok());
+    let body: Option<Value> = resp.json().await.ok();
+    let hinted = header.or_else(|| {
+        body.as_ref()
+            .and_then(|v| v.pointer("/error/metadata/retry_after_seconds").or_else(|| v.pointer("/error/metadata/retry_after_seconds_raw")))
+            .and_then(|v| v.as_f64())
+    });
+    let default = 0.6 * f64::from(attempt) * f64::from(attempt);
+    Duration::from_secs_f64(hinted.unwrap_or(default).clamp(0.3, 4.0))
+}
+
+const ATTEMPTS: u32 = 3;
+
 pub async fn transcribe(http: &reqwest::Client, ep: &Endpoint, req: SttRequest<'_>) -> Result<String> {
     if req.model.trim().is_empty() {
         bail!("No speech-to-text model selected");
     }
     let timeout = Duration::from_secs(30 + (req.wav.len() as u64 / 32_000) / 2);
-    let resp = match ep.info.stt {
-        SttStyle::None => bail!("{} does not offer speech-to-text. Pick another provider for transcription.", ep.info.name),
-        SttStyle::OpenRouterJson => {
-            let mut body = json!({
-                "model": req.model,
-                "input_audio": {
-                    "data": base64::engine::general_purpose::STANDARD.encode(&req.wav),
-                    "format": "wav",
-                },
-                "temperature": 0,
-            });
-            if let Some(lang) = req.language {
-                body["language"] = json!(lang);
+    let build = || -> Result<reqwest::RequestBuilder> {
+        Ok(match ep.info.stt {
+            SttStyle::None => bail!("{} does not offer speech-to-text. Pick another provider for transcription.", ep.info.name),
+            SttStyle::OpenRouterJson => {
+                let mut body = json!({
+                    "model": req.model,
+                    "input_audio": {
+                        "data": base64::engine::general_purpose::STANDARD.encode(&req.wav),
+                        "format": "wav",
+                    },
+                    "temperature": 0,
+                });
+                if let Some(lang) = req.language {
+                    body["language"] = json!(lang);
+                }
+                ep.auth(ep.http_post(http, "audio/transcriptions")).json(&body).timeout(timeout)
             }
-            ep.auth(ep.http_post(http, "audio/transcriptions")).json(&body).timeout(timeout).send().await?
+            SttStyle::Multipart => {
+                let part = reqwest::multipart::Part::bytes(req.wav.clone()).file_name("audio.wav").mime_str("audio/wav")?;
+                let mut form = reqwest::multipart::Form::new()
+                    .part("file", part)
+                    .text("model", req.model.to_string())
+                    .text("response_format", "json")
+                    .text("temperature", "0");
+                if let Some(lang) = req.language {
+                    form = form.text("language", lang.to_string());
+                }
+                if let Some(prompt) = req.prompt {
+                    form = form.text("prompt", prompt.to_string());
+                }
+                ep.auth(ep.http_post(http, "audio/transcriptions")).multipart(form).timeout(timeout)
+            }
+        })
+    };
+    let mut attempt = 1;
+    let resp = loop {
+        let resp = build()?.send().await?;
+        if retryable(resp.status()) && attempt < ATTEMPTS {
+            let wait = backoff(resp, attempt).await;
+            log::warn!("transcription attempt {attempt} was rate limited or failed upstream; retrying in {wait:?}");
+            tokio::time::sleep(wait).await;
+            attempt += 1;
+            continue;
         }
-        SttStyle::Multipart => {
-            let part = reqwest::multipart::Part::bytes(req.wav).file_name("audio.wav").mime_str("audio/wav")?;
-            let mut form = reqwest::multipart::Form::new()
-                .part("file", part)
-                .text("model", req.model.to_string())
-                .text("response_format", "json")
-                .text("temperature", "0");
-            if let Some(lang) = req.language {
-                form = form.text("language", lang.to_string());
-            }
-            if let Some(prompt) = req.prompt {
-                form = form.text("prompt", prompt.to_string());
-            }
-            ep.auth(ep.http_post(http, "audio/transcriptions")).multipart(form).timeout(timeout).send().await?
-        }
+        break resp;
     };
     if !resp.status().is_success() {
         return Err(error_from(resp, "Transcription").await);
@@ -323,6 +361,7 @@ pub async fn chat(
     let mut temperature = temperature;
 
     let mut idx = start;
+    let mut attempt = 1;
     loop {
         let mut body = json!({ "model": model, "messages": messages, "stream": false });
         if let Some(t) = temperature {
@@ -337,6 +376,13 @@ pub async fn chat(
             .timeout(Duration::from_secs(90))
             .send()
             .await?;
+        if retryable(resp.status()) && attempt < ATTEMPTS {
+            let wait = backoff(resp, attempt).await;
+            log::warn!("language model attempt {attempt} was rate limited or failed upstream; retrying in {wait:?}");
+            tokio::time::sleep(wait).await;
+            attempt += 1;
+            continue;
+        }
         if resp.status() == reqwest::StatusCode::BAD_REQUEST || resp.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
