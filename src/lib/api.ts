@@ -36,6 +36,7 @@ export type SelectionMethod = "copy" | "primary" | "none";
 export type OutputMethod = "paste" | "type" | "clipboard";
 export type PasteShortcut = "ctrl_v" | "ctrl_shift_v" | "shift_insert";
 export type OverlayPosition = "bottom" | "top";
+export type Reasoning = "off" | "low" | "default";
 
 export interface Settings {
   onboarded: boolean;
@@ -53,6 +54,8 @@ export interface Settings {
   command: {
     enabled: boolean;
     llm: ModelRef;
+    reasoning: Reasoning;
+    trigger_word: string;
     selection_method: SelectionMethod;
     prompt_selection: string;
     prompt_generate: string;

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Voice dictation and voice commands for your desktop, powered by the models you choose."
 authors = ["Burak Gon"]
 license = "MIT"
-repository = "https://github.com/burakgon/opendictate"
+repository = "https://github.com/burakgon/opendictate-desktop"
 edition = "2021"
 rust-version = "1.85"
 

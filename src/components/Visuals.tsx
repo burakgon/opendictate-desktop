@@ -59,7 +59,7 @@ export function StatusOrb({ status, size = 120 }: { status: Status | null; size?
 
   const gradient = command
     ? "radial-gradient(circle at 30% 25%, #f0abfc, #a855f7 45%, #6d28d9 80%)"
-    : "radial-gradient(circle at 30% 25%, #c4b5fd, #8b5cf6 40%, #0891b2 90%)";
+    : "radial-gradient(circle at 30% 25%, #bae6fd, #3b82f6 45%, #4f46e5 90%)";
   return (
     <div className="relative flex items-center justify-center" style={{ width: size * 1.8, height: size * 1.8 }}>
       {recording && (
@@ -78,7 +78,7 @@ export function StatusOrb({ status, size = 120 }: { status: Status | null; size?
           height: size,
           background: gradient,
           transform: `scale(${1 + level * 0.28})`,
-          boxShadow: `0 0 ${40 + level * 80}px ${command ? "rgba(168,85,247,0.55)" : "rgba(124,58,237,0.5)"}, inset 0 -10px 30px rgba(0,0,0,0.25), inset 0 8px 20px rgba(255,255,255,0.25)`,
+          boxShadow: `0 0 ${40 + level * 80}px ${command ? "rgba(168,85,247,0.55)" : "rgba(59,130,246,0.5)"}, inset 0 -10px 30px rgba(0,0,0,0.25), inset 0 8px 20px rgba(255,255,255,0.25)`,
         }}
       >
         {processing && (

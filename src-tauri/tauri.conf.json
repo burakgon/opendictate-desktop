@@ -35,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "appimage", "nsis", "dmg", "app"],
+    "targets": "all",
     "category": "Productivity",
     "shortDescription": "Voice dictation and voice commands for your desktop",
     "longDescription": "OpenDictate turns your voice into text in any app. Tap a key to dictate, hold it to speak a command that rewrites the selected text or writes something new. Works with OpenRouter, OpenAI, Groq, Mistral, Gemini, Anthropic or any OpenAI-compatible server.",

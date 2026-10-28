@@ -9,19 +9,20 @@ export interface Suggestion {
 /** Hand-picked defaults shown before (and above) the live model list. */
 export const STT_SUGGESTIONS: Partial<Record<ProviderId, Suggestion[]>> = {
   openrouter: [
-    { id: "openai/whisper-large-v3-turbo", label: "Whisper Large v3 Turbo", tags: ["fast", "cheap"] },
-    { id: "nvidia/parakeet-tdt-0.6b-v3", label: "NVIDIA Parakeet TDT v3", tags: ["fastest"] },
-    { id: "mistralai/voxtral-mini-transcribe-3-0", label: "Voxtral Mini Transcribe", tags: ["fast"] },
-    { id: "openai/gpt-4o-mini-transcribe", label: "GPT-4o mini Transcribe", tags: ["accurate"] },
-    { id: "openai/gpt-4o-transcribe", label: "GPT-4o Transcribe", tags: ["accurate"] },
-    { id: "elevenlabs/scribe-v2", label: "ElevenLabs Scribe v2", tags: ["best"] },
+    { id: "openai/gpt-transcribe", label: "GPT Transcribe", tags: ["best", "fast"] },
+    { id: "openai/gpt-4o-mini-transcribe", label: "GPT-4o mini Transcribe", tags: ["fast"] },
+    { id: "mistralai/voxtral-mini-transcribe-3-0", label: "Voxtral Mini Transcribe 3", tags: ["fast"] },
+    { id: "openai/whisper-large-v3-turbo", label: "Whisper Large v3 Turbo", tags: ["cheap"] },
+    { id: "elevenlabs/scribe-v2", label: "ElevenLabs Scribe v2", tags: ["accurate"] },
+    { id: "microsoft/mai-transcribe-2", label: "MAI-Transcribe 2", tags: ["multilingual"] },
     { id: "google/gemini-3.5-transcribe", label: "Gemini 3.5 Transcribe" },
     { id: "deepgram/nova-3", label: "Deepgram Nova-3" },
+    { id: "nvidia/parakeet-tdt-0.6b-v3", label: "NVIDIA Parakeet TDT v3 (English & European languages)", tags: ["fastest"] },
   ],
   openai: [
+    { id: "gpt-transcribe", label: "GPT Transcribe", tags: ["best"] },
     { id: "gpt-4o-mini-transcribe", label: "GPT-4o mini Transcribe", tags: ["fast"] },
-    { id: "gpt-4o-transcribe", label: "GPT-4o Transcribe", tags: ["best"] },
-    { id: "whisper-1", label: "Whisper" },
+    { id: "whisper-1", label: "Whisper", tags: ["cheap"] },
   ],
   groq: [
     { id: "whisper-large-v3-turbo", label: "Whisper Large v3 Turbo", tags: ["fastest"] },
@@ -36,16 +37,18 @@ export const STT_SUGGESTIONS: Partial<Record<ProviderId, Suggestion[]>> = {
 
 export const LLM_SUGGESTIONS: Partial<Record<ProviderId, Suggestion[]>> = {
   openrouter: [
+    { id: "openai/gpt-6-luna", label: "GPT-6 Luna", tags: ["fast", "cheap"] },
     { id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", tags: ["fast", "smart"] },
     { id: "google/gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tags: ["fastest", "cheap"] },
-    { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", tags: ["cheap"] },
-    { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", tags: ["cheap"] },
-    { id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", tags: ["best"] },
     { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash", tags: ["smart"] },
+    { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", tags: ["cheap"] },
+    { id: "openai/gpt-6.1-terra", label: "GPT-6.1 Terra", tags: ["smart"] },
+    { id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", tags: ["best"] },
   ],
   openai: [
-    { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", tags: ["fast"] },
-    { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", tags: ["smart"] },
+    { id: "gpt-6-luna", label: "GPT-6 Luna", tags: ["fast", "cheap"] },
+    { id: "gpt-6.1-terra", label: "GPT-6.1 Terra", tags: ["smart"] },
+    { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", tags: ["best"] },
   ],
   anthropic: [
     { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", tags: ["fast"] },
@@ -116,4 +119,5 @@ export const TAG_STYLE: Record<string, string> = {
   accurate: "bg-violet-500/15 text-violet-300",
   smart: "bg-violet-500/15 text-violet-300",
   best: "bg-amber-500/15 text-amber-300",
+  multilingual: "bg-fuchsia-500/15 text-fuchsia-300",
 };

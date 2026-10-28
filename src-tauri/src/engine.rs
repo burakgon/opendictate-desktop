@@ -1,10 +1,14 @@
 //! The dictation engine: a small state machine driven by hotkeys, tray/CLI triggers and timers.
 //!
 //! ```text
-//!   Idle ──press──▶ Recording ──release/press──▶ Processing ──▶ Idle
-//!                       │                            │
-//!                       └──── Esc / interrupted ─────┴──▶ Idle (cancelled)
+//!   Idle ──press──▶ Recording ──release/press──▶ Idle  (+ a processing task in flight)
+//!                       │
+//!                       └── Esc / interrupted ──▶ Idle (cancelled)
 //! ```
+//!
+//! Recording is exclusive, but processing is not: you can start the next dictation while the
+//! previous one is still being transcribed. Results are inserted strictly in the order they
+//! were spoken, and all clipboard/keyboard work is serialised.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -23,7 +27,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     audio::{self, Captured, Recorder, Sound},
-    history::{Entry, History},
+    history::{self, Entry, History},
     hotkeys::{HotkeyEvent, Slot},
     output::{InsertOutcome, Output},
     overlay,
@@ -80,7 +84,70 @@ struct Session {
 enum Phase {
     Idle,
     Recording(Session),
-    Processing { id: u64, abort: tokio::task::AbortHandle },
+}
+
+/// Hands out insertion turns so results are typed in the order they were recorded.
+#[derive(Default)]
+struct Turnstile {
+    next_ticket: AtomicU64,
+    /// (ticket being served, tickets finished early)
+    state: Mutex<(u64, std::collections::BTreeSet<u64>)>,
+    notify: tokio::sync::Notify,
+}
+
+impl Turnstile {
+    fn take(&self) -> u64 {
+        self.next_ticket.fetch_add(1, Ordering::SeqCst)
+    }
+
+    async fn wait(&self, ticket: u64) {
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.state.lock().0 >= ticket {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn release(&self, ticket: u64) {
+        {
+            let mut st = self.state.lock();
+            if st.0 == ticket {
+                st.0 += 1;
+                loop {
+                    let serving = st.0;
+                    if !st.1.remove(&serving) {
+                        break;
+                    }
+                    st.0 += 1;
+                }
+            } else if ticket > st.0 {
+                st.1.insert(ticket);
+            }
+        }
+        self.notify.notify_waiters();
+    }
+}
+
+/// A processing task's place in the insertion queue; released when dropped.
+struct Turn {
+    ticket: u64,
+    stile: Arc<Turnstile>,
+}
+
+impl Turn {
+    async fn wait(&self) {
+        self.stile.wait(self.ticket).await
+    }
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.stile.release(self.ticket);
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,6 +181,11 @@ pub struct Engine {
     last_status: Mutex<Option<Status>>,
     /// Set while the settings UI records a new shortcut.
     pub paused: std::sync::atomic::AtomicBool,
+    /// Processing tasks in flight, by session.
+    inflight: Mutex<HashMap<u64, tokio::task::AbortHandle>>,
+    turns: Arc<Turnstile>,
+    /// Serialises everything that touches the clipboard or presses keys.
+    io_lock: tokio::sync::Mutex<()>,
 }
 
 const FEEDBACK_DELAY_MS: u64 = 130;
@@ -141,6 +213,9 @@ impl Engine {
             modifier_only: RwLock::new(HashMap::new()),
             last_status: Mutex::new(None),
             paused: std::sync::atomic::AtomicBool::new(false),
+            inflight: Mutex::new(HashMap::new()),
+            turns: Arc::new(Turnstile::default()),
+            io_lock: tokio::sync::Mutex::new(()),
         });
         (engine, rx)
     }
@@ -180,7 +255,24 @@ impl Engine {
         }
     }
 
+    fn recording_id(&self) -> Option<u64> {
+        match &*self.phase.lock() {
+            Phase::Recording(s) => Some(s.id),
+            Phase::Idle => None,
+        }
+    }
+
+    fn busy(&self) -> bool {
+        self.recording_id().is_some() || !self.inflight.lock().is_empty()
+    }
+
     fn emit_status(&self, status: Status) {
+        // While a newer recording is running, older sessions finish quietly.
+        if let Some(rid) = self.recording_id() {
+            if rid != status.session {
+                return;
+            }
+        }
         let _ = self.app.emit("od://status", &status);
         *self.last_status.lock() = Some(status);
     }
@@ -232,11 +324,8 @@ impl Engine {
                 }
             }
             HotkeyEvent::Escape => {
-                if self.settings.read().hotkeys.escape_cancels {
-                    let active = !matches!(&*self.phase.lock(), Phase::Idle);
-                    if active {
-                        self.cancel(true);
-                    }
+                if self.settings.read().hotkeys.escape_cancels && self.busy() {
+                    self.cancel(true);
                 }
             }
         }
@@ -340,15 +429,11 @@ impl Engine {
         log::info!("trigger: {t:?}");
         match t {
             Trigger::ToggleDictate | Trigger::ToggleCommand => {
-                let (idle, recording) = {
-                    let p = self.phase.lock();
-                    (matches!(*p, Phase::Idle), matches!(*p, Phase::Recording(_)))
-                };
-                if idle {
+                if self.recording_id().is_some() {
+                    self.stop_and_process();
+                } else {
                     let mode = if matches!(t, Trigger::ToggleDictate) { Mode::Dictate } else { Mode::Command };
                     self.start_recording(None, mode, HotkeyMode::Toggle, false);
-                } else if recording {
-                    self.stop_and_process();
                 }
             }
             Trigger::Stop => {
@@ -478,17 +563,21 @@ impl Engine {
         });
     }
 
+    /// Cancels the recording if there is one, otherwise everything still being processed.
     fn cancel(self: &Arc<Self>, audible: bool) {
         let previous = std::mem::replace(&mut *self.phase.lock(), Phase::Idle);
         let (id, mode, had_feedback) = match previous {
-            Phase::Idle => return,
             Phase::Recording(s) => {
                 self.recorder.cancel();
                 (s.id, s.mode, s.feedback)
             }
-            Phase::Processing { id, abort } => {
-                abort.abort();
-                (id, Mode::Dictate, true)
+            Phase::Idle => {
+                let tasks: Vec<(u64, tokio::task::AbortHandle)> = self.inflight.lock().drain().collect();
+                let Some(last) = tasks.iter().map(|(id, _)| *id).max() else { return };
+                for (_, abort) in tasks {
+                    abort.abort();
+                }
+                (last, Mode::Dictate, true)
             }
         };
         log::info!("session {id} cancelled");
@@ -498,8 +587,10 @@ impl Engine {
         let mut st = self.status("cancelled", mode, id);
         st.message = Some("Cancelled".into());
         self.emit_status(st);
-        overlay::hide(&self.app);
-        tray::set_active(&self.app, false);
+        if !self.busy() {
+            overlay::hide(&self.app);
+        }
+        tray::set_active(&self.app, self.busy());
     }
 
     fn fail(self: &Arc<Self>, id: u64, mode: Mode, message: String) {
@@ -512,16 +603,15 @@ impl Engine {
             overlay::show(&self.app, settings.general.overlay_position);
         }
         self.hide_later(id, Duration::from_millis(4500));
-        tray::set_active(&self.app, false);
+        tray::set_active(&self.app, self.busy());
     }
 
     fn hide_later(self: &Arc<Self>, id: u64, after: Duration) {
         let engine = self.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(after).await;
-            let idle = matches!(*engine.phase.lock(), Phase::Idle);
             let same = engine.last_status.lock().as_ref().map(|s| s.session == id).unwrap_or(true);
-            if idle && same {
+            if !engine.busy() && same {
                 overlay::hide(&engine.app);
             }
         });
@@ -532,10 +622,7 @@ impl Engine {
             let mut p = self.phase.lock();
             match std::mem::replace(&mut *p, Phase::Idle) {
                 Phase::Recording(s) => s,
-                other => {
-                    *p = other;
-                    return;
-                }
+                Phase::Idle => return,
             }
         };
         let captured = match self.recorder.stop() {
@@ -549,32 +636,41 @@ impl Engine {
         log::info!("recording stopped (session {}, {:.1}s, {:?})", session.id, captured.duration_secs(), mode);
         if !session.feedback {
             // Released before any feedback was shown: treat as an accidental tap.
-            tray::set_active(&self.app, false);
+            tray::set_active(&self.app, self.busy());
             return;
         }
         self.sound(Sound::Stop);
-        let engine = self.clone();
         let id = session.id;
+        self.spawn_processing(id, mode, move |engine, turn| async move { engine.process(id, mode, captured, turn).await });
+    }
+
+    /// Runs a processing job in the background, holding a place in the insertion queue.
+    fn spawn_processing<F, Fut>(self: &Arc<Self>, id: u64, mode: Mode, job: F)
+    where
+        F: FnOnce(Arc<Self>, Turn) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<Outcome>> + Send + 'static,
+    {
+        let turn = Turn { ticket: self.turns.take(), stile: self.turns.clone() };
+        let engine = self.clone();
+        let mut inflight = self.inflight.lock();
         let task = tauri::async_runtime::spawn(async move {
-            let result = engine.clone().process(id, mode, captured).await;
+            let result = job(engine.clone(), turn).await;
             engine.finish(id, mode, result);
         });
-        *self.phase.lock() = Phase::Processing { id, abort: task.inner().abort_handle() };
+        inflight.insert(id, task.inner().abort_handle());
+        drop(inflight);
+        tray::set_active(&self.app, true);
     }
 
     fn finish(self: &Arc<Self>, id: u64, mode: Mode, result: Result<Outcome>) {
-        {
-            let mut p = self.phase.lock();
-            if matches!(&*p, Phase::Processing { id: pid, .. } if *pid == id) {
-                *p = Phase::Idle;
-            } else if !matches!(*p, Phase::Idle) {
-                return; // a newer session took over
-            }
-        }
-        tray::set_active(&self.app, false);
+        self.inflight.lock().remove(&id);
+        tray::set_active(&self.app, self.busy());
+        let recording = self.recording_id().is_some();
         match result {
             Ok(Outcome::Done { preview, copied_only }) => {
-                self.sound(Sound::Done);
+                if !recording {
+                    self.sound(Sound::Done);
+                }
                 let mut st = self.status("done", mode, id);
                 st.preview = Some(preview);
                 st.message = Some(if copied_only { "Copied to clipboard".into() } else { "Inserted".into() });
@@ -656,12 +752,16 @@ impl Engine {
     async fn llm(&self, settings: &Settings, model: &ModelRef, system: &str, user: String, temperature: f32) -> Result<String> {
         let ep = Endpoint::resolve(&settings.providers, &model.provider)?;
         let started = Instant::now();
-        let out = providers::chat(&self.http, &ep, &model.model, &[msg("system", system), msg("user", user)], Some(temperature)).await?;
+        let reasoning = settings.command.reasoning;
+        let out = providers::chat(&self.http, &ep, &model.model, &[msg("system", system), msg("user", user)], Some(temperature), reasoning)
+            .await?;
         log::info!("llm '{}' answered in {} ms", model.model, started.elapsed().as_millis());
         Ok(out)
     }
 
-    async fn insert(&self, text: &str, settings: &Settings) -> Result<bool> {
+    async fn insert(&self, text: &str, settings: &Settings, turn: &Turn) -> Result<bool> {
+        turn.wait().await;
+        let _io = self.io_lock.lock().await;
         self.wait_keys_released().await;
         let output = self.output.clone();
         let text = text.to_string();
@@ -671,12 +771,16 @@ impl Engine {
     }
 
     async fn capture_selection(&self, method: SelectionMethod) -> Option<String> {
+        if method == SelectionMethod::None {
+            return None;
+        }
+        let _io = self.io_lock.lock().await;
         self.wait_keys_released().await;
         let output = self.output.clone();
         tokio::task::spawn_blocking(move || output.capture_selection(method).0).await.ok().flatten()
     }
 
-    async fn process(self: Arc<Self>, id: u64, mode: Mode, captured: Captured) -> Result<Outcome> {
+    async fn process(self: Arc<Self>, id: u64, mode: Mode, captured: Captured, turn: Turn) -> Result<Outcome> {
         let started = Instant::now();
         let settings = self.settings.read().clone();
         self.step(id, mode, "transcribing", None);
@@ -689,55 +793,40 @@ impl Engine {
             let Some((instruction, secs)) = transcript? else {
                 return Ok(Outcome::Nothing("No speech detected".into()));
             };
-            if instruction.trim().is_empty() {
-                return Ok(Outcome::Nothing("No speech detected".into()));
-            }
-            self.step(id, mode, "thinking", selection.as_ref().map(|s| s.chars().count()));
-            let c = &settings.command;
-            let (system, user) = match &selection {
-                Some(sel) => (
-                    c.prompt_selection.clone(),
-                    format!("<instruction>\n{instruction}\n</instruction>\n\n<selected_text>\n{sel}\n</selected_text>"),
-                ),
-                None => (c.prompt_generate.clone(), instruction.clone()),
-            };
-            let result = self.llm(&settings, &c.llm, &system, user, c.temperature).await?;
-            if result.trim().is_empty() {
-                return Err(anyhow!("The model returned an empty answer"));
-            }
-            self.step(id, mode, "inserting", None);
-            let copied_only = self.insert(&result, &settings).await?;
-            self.record(Entry {
-                kind: "command".into(),
-                text: result.clone(),
-                transcript: instruction,
-                selection: selection.map(|s| s.chars().take(2000).collect()),
-                audio_secs: secs,
-                latency_ms: started.elapsed().as_millis() as u64,
-                stt_model: settings.dictation.stt.model.clone(),
-                llm_model: Some(c.llm.model.clone()),
-                inserted: !copied_only,
-                ..Default::default()
-            });
-            return Ok(Outcome::Done { preview: preview(&result), copied_only });
+            return self.run_command(id, &settings, instruction, selection, secs, started, &turn).await;
         }
 
         // Dictation.
         let Some((raw, secs)) = self.transcribe(&settings, captured).await? else {
             return Ok(Outcome::Nothing("No speech detected".into()));
         };
+        if settings.command.enabled {
+            if let Some(instruction) = strip_trigger_word(&raw, &settings.command.trigger_word) {
+                // "Jarvis, make this formal": the dictation turns into a command.
+                let mut st = self.status("processing", Mode::Command, id);
+                st.message = Some("Thinking".into());
+                st.step = Some("thinking");
+                self.emit_status(st);
+                let selection = self.capture_selection(settings.command.selection_method).await;
+                return self.run_command(id, &settings, instruction, selection, secs, started, &turn).await;
+            }
+        }
         let d = &settings.dictation;
         let mut text = raw.clone();
         let mut llm_model = None;
         if d.polish && !text.trim().is_empty() {
             self.step(id, mode, "polishing", None);
-            match self.llm(&settings, &d.polish_model, &d.polish_prompt, format!("<transcript>\n{text}\n</transcript>"), 0.0).await {
-                Ok(t) if !t.trim().is_empty() => {
+            // Formatting is a refinement: if it's slow or fails, insert the raw transcript.
+            let budget = Duration::from_secs(6 + history::count_words(&text) as u64 / 40);
+            let polish = self.llm(&settings, &d.polish_model, &d.polish_prompt, format!("<transcript>\n{text}\n</transcript>"), 0.0);
+            match tokio::time::timeout(budget, polish).await {
+                Ok(Ok(t)) if !t.trim().is_empty() => {
                     text = t;
                     llm_model = Some(d.polish_model.model.clone());
                 }
-                Ok(_) => {}
-                Err(e) => log::warn!("polish failed, inserting the raw transcript: {e:#}"),
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => log::warn!("formatting failed, inserting the raw transcript: {e:#}"),
+                Err(_) => log::warn!("formatting took longer than {}s, inserting the raw transcript", budget.as_secs()),
             }
         }
         let mut text = apply_replacements(text.trim(), &d.replacements);
@@ -748,7 +837,7 @@ impl Engine {
             text.push(' ');
         }
         self.step(id, mode, "inserting", None);
-        let copied_only = self.insert(&text, &settings).await?;
+        let copied_only = self.insert(&text, &settings, &turn).await?;
         self.record(Entry {
             kind: "dictation".into(),
             text: text.trim_end().to_string(),
@@ -763,6 +852,50 @@ impl Engine {
         Ok(Outcome::Done { preview: preview(&text), copied_only })
     }
 
+    async fn run_command(
+        &self,
+        id: u64,
+        settings: &Settings,
+        instruction: String,
+        selection: Option<String>,
+        secs: f32,
+        started: Instant,
+        turn: &Turn,
+    ) -> Result<Outcome> {
+        let mode = Mode::Command;
+        if instruction.trim().is_empty() {
+            return Ok(Outcome::Nothing("No speech detected".into()));
+        }
+        self.step(id, mode, "thinking", selection.as_ref().map(|s| s.chars().count()));
+        let c = &settings.command;
+        let (system, user) = match &selection {
+            Some(sel) => (
+                c.prompt_selection.clone(),
+                format!("<instruction>\n{instruction}\n</instruction>\n\n<selected_text>\n{sel}\n</selected_text>"),
+            ),
+            None => (c.prompt_generate.clone(), instruction.clone()),
+        };
+        let result = self.llm(settings, &c.llm, &system, user, c.temperature).await?;
+        if result.trim().is_empty() {
+            return Err(anyhow!("The model returned an empty answer"));
+        }
+        self.step(id, mode, "inserting", None);
+        let copied_only = self.insert(&result, settings, turn).await?;
+        self.record(Entry {
+            kind: "command".into(),
+            text: result.clone(),
+            transcript: instruction,
+            selection: selection.map(|s| s.chars().take(2000).collect()),
+            audio_secs: secs,
+            latency_ms: started.elapsed().as_millis() as u64,
+            stt_model: settings.dictation.stt.model.clone(),
+            llm_model: Some(c.llm.model.clone()),
+            inserted: !copied_only,
+            ..Default::default()
+        });
+        Ok(Outcome::Done { preview: preview(&result), copied_only })
+    }
+
     fn record(&self, entry: Entry) {
         let g = self.settings.read().general.clone();
         let saved = self.history.add(entry, g.history_enabled, g.history_limit);
@@ -771,56 +904,44 @@ impl Engine {
 
     /// Applies a saved prompt to the selected text without speaking.
     fn quick_action(self: &Arc<Self>, action_id: String) {
-        if !matches!(*self.phase.lock(), Phase::Idle) {
-            return;
-        }
         let settings = self.settings.read().clone();
         let Some(action) = settings.command.quick_actions.iter().find(|a| a.id == action_id).cloned() else {
             log::warn!("unknown quick action '{action_id}'");
             return;
         };
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let engine = self.clone();
-        let task = tauri::async_runtime::spawn(async move {
+        self.spawn_processing(id, Mode::Action, move |engine, turn| async move {
             let started = Instant::now();
-            let run = async {
-                let mut st = engine.status("processing", Mode::Action, id);
-                st.message = Some(action.name.clone());
-                st.step = Some("thinking");
-                engine.emit_status(st);
-                if settings.general.show_overlay {
-                    overlay::show(&engine.app, settings.general.overlay_position);
-                }
-                let method = match settings.command.selection_method {
-                    SelectionMethod::None => SelectionMethod::Copy,
-                    m => m,
-                };
-                let Some(selection) = engine.capture_selection(method).await else {
-                    return Err(anyhow!("Select some text first, then run “{}”.", action.name));
-                };
-                let c = &settings.command;
-                let user = format!(
-                    "<instruction>\n{}\n</instruction>\n\n<selected_text>\n{selection}\n</selected_text>",
-                    action.prompt
-                );
-                let result = engine.llm(&settings, &c.llm, &c.prompt_selection, user, c.temperature).await?;
-                let copied_only = engine.insert(&result, &settings).await?;
-                engine.record(Entry {
-                    kind: "action".into(),
-                    text: result.clone(),
-                    transcript: action.name.clone(),
-                    selection: Some(selection.chars().take(2000).collect()),
-                    latency_ms: started.elapsed().as_millis() as u64,
-                    llm_model: Some(c.llm.model.clone()),
-                    inserted: !copied_only,
-                    ..Default::default()
-                });
-                Ok(Outcome::Done { preview: preview(&result), copied_only })
+            let mut st = engine.status("processing", Mode::Action, id);
+            st.message = Some(action.name.clone());
+            st.step = Some("thinking");
+            engine.emit_status(st);
+            if settings.general.show_overlay && engine.recording_id().is_none() {
+                overlay::show(&engine.app, settings.general.overlay_position);
+            }
+            let method = match settings.command.selection_method {
+                SelectionMethod::None => SelectionMethod::Copy,
+                m => m,
             };
-            let result = run.await;
-            engine.finish(id, Mode::Action, result);
+            let Some(selection) = engine.capture_selection(method).await else {
+                return Err(anyhow!("Select some text first, then run “{}”.", action.name));
+            };
+            let c = &settings.command;
+            let user = format!("<instruction>\n{}\n</instruction>\n\n<selected_text>\n{selection}\n</selected_text>", action.prompt);
+            let result = engine.llm(&settings, &c.llm, &c.prompt_selection, user, c.temperature).await?;
+            let copied_only = engine.insert(&result, &settings, &turn).await?;
+            engine.record(Entry {
+                kind: "action".into(),
+                text: result.clone(),
+                transcript: action.name.clone(),
+                selection: Some(selection.chars().take(2000).collect()),
+                latency_ms: started.elapsed().as_millis() as u64,
+                llm_model: Some(c.llm.model.clone()),
+                inserted: !copied_only,
+                ..Default::default()
+            });
+            Ok(Outcome::Done { preview: preview(&result), copied_only })
         });
-        *self.phase.lock() = Phase::Processing { id, abort: task.inner().abort_handle() };
     }
 }
 
@@ -878,6 +999,40 @@ fn replace_case_insensitive(haystack: &str, needle: &str, with: &str) -> String 
     out
 }
 
+/// If `text` starts with the command word (case-insensitive, ignoring punctuation), returns
+/// the rest of the sentence: the instruction.
+pub fn strip_trigger_word(text: &str, word: &str) -> Option<String> {
+    let word = word.trim();
+    if word.is_empty() {
+        return None;
+    }
+    let normalize = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+    let target = normalize(word);
+    if target.is_empty() {
+        return None;
+    }
+    // Walk the leading words of the transcript until they spell the trigger word.
+    let mut acc = String::new();
+    for (idx, ch) in text.char_indices() {
+        if ch.is_alphanumeric() {
+            acc.extend(ch.to_lowercase());
+            if acc == target {
+                let rest = &text[idx + ch.len_utf8()..];
+                // Must end at a word boundary.
+                if rest.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(false) {
+                    return None;
+                }
+                let rest = rest.trim_start_matches(|c: char| !c.is_alphanumeric());
+                return if rest.is_empty() { None } else { Some(rest.to_string()) };
+            }
+            if !target.starts_with(&acc) {
+                return None;
+            }
+        }
+    }
+    None
+}
+
 /// Whisper-style models invent these on near-silent audio.
 fn is_hallucination(text: &str, secs: f32) -> bool {
     if secs > 3.0 {
@@ -909,6 +1064,39 @@ mod tests {
         assert_eq!(apply_replacements("I love Open Dictate a lot", &r), "I love OpenDictate a lot");
         let r = vec![Replacement { from: "cat".into(), to: "dog".into() }];
         assert_eq!(apply_replacements("concatenate the cat", &r), "concatenate the dog");
+    }
+
+    #[tokio::test]
+    async fn turnstile_orders_insertions() {
+        let stile = Arc::new(Turnstile::default());
+        let t0 = Turn { ticket: stile.take(), stile: stile.clone() };
+        let t1 = Turn { ticket: stile.take(), stile: stile.clone() };
+        let t2 = Turn { ticket: stile.take(), stile: stile.clone() };
+        // Ticket 1 is abandoned early (e.g. no speech): it must not block ticket 2.
+        drop(t1);
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let o2 = order.clone();
+        let h2 = tokio::spawn(async move {
+            t2.wait().await;
+            o2.lock().push(2);
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(order.lock().is_empty(), "ticket 2 must wait for ticket 0");
+        t0.wait().await;
+        order.lock().push(0);
+        drop(t0);
+        h2.await.unwrap();
+        assert_eq!(*order.lock(), vec![0, 2]);
+    }
+
+    #[test]
+    fn trigger_word() {
+        assert_eq!(strip_trigger_word("Jarvis, make this formal.", "jarvis").as_deref(), Some("make this formal."));
+        assert_eq!(strip_trigger_word("Hey Jarvis translate to German", "Hey Jarvis").as_deref(), Some("translate to German"));
+        assert_eq!(strip_trigger_word("Jarvisification is a word", "jarvis"), None);
+        assert_eq!(strip_trigger_word("I told Jarvis hello", "jarvis"), None);
+        assert_eq!(strip_trigger_word("anything", ""), None);
+        assert_eq!(strip_trigger_word("Komut: bunu resmi yap", "komut").as_deref(), Some("bunu resmi yap"));
     }
 
     #[test]

@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { LANGUAGES } from "../lib/catalog";
 import { useStore } from "../lib/store";
 
-const DEFAULT_POLISH_PROMPT_HINT = "Cleans punctuation and filler words without changing your meaning.";
+const DEFAULT_POLISH_PROMPT_HINT = "Never changes your meaning. If formatting fails, the raw transcript is inserted.";
 
 export function Dictation({ navigate }: { navigate: (p: string) => void }) {
   const { settings, update } = useStore();
@@ -44,8 +44,13 @@ export function Dictation({ navigate }: { navigate: (p: string) => void }) {
 
       <Section
         icon={<Sparkles className="size-4.5" />}
-        title="AI polish"
-        description="Run each dictation through a language model to fix punctuation, remove “um”s and false starts, and format lists."
+        title="Smart formatting"
+        description={
+          <>
+            A language model cleans up punctuation, “um”s and false starts — and follows formatting you say out loud: “new paragraph”,
+            “bullet milk, bullet eggs”, “make that bold”, “put this in a table”, “scratch that”.
+          </>
+        }
         actions={<Toggle checked={d.polish} onChange={(v) => update((s) => void (s.dictation.polish = v))} />}
       >
         <div className={d.polish ? "space-y-4" : "pointer-events-none space-y-4 opacity-40"}>

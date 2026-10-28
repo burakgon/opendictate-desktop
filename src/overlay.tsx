@@ -26,7 +26,7 @@ function Waveform({ command }: { command: boolean }) {
               height: h,
               background: command
                 ? "linear-gradient(180deg, #f0abfc, #a855f7)"
-                : "linear-gradient(180deg, #c4b5fd, #22d3ee)",
+                : "linear-gradient(180deg, #7dd3fc, #3b82f6)",
               opacity: 0.45 + v * 0.55,
             }}
           />
@@ -90,9 +90,9 @@ function Overlay() {
           <Wand2 className="size-4" />
         </div>
       ) : (
-        <div className="relative flex size-8 items-center justify-center rounded-full bg-rose-500/15">
-          <span className="absolute size-3 animate-ping rounded-full bg-rose-500/60" />
-          <span className="relative size-3 rounded-full bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.8)]" />
+        <div className="relative flex size-8 items-center justify-center rounded-full bg-sky-500/15">
+          <span className="absolute size-3 animate-ping rounded-full bg-sky-400/60" />
+          <span className="relative size-3 rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.9)]" />
         </div>
       );
       body = <Waveform command={command} />;
@@ -109,7 +109,7 @@ function Overlay() {
           <div className="absolute inset-0 rounded-full border-2 border-white/10" />
           <div
             className="absolute inset-0 animate-spin rounded-full border-2 border-transparent [animation-duration:800ms]"
-            style={{ borderTopColor: command ? "#e879f9" : "#a78bfa", borderRightColor: command ? "#a855f7" : "#22d3ee" }}
+            style={{ borderTopColor: command ? "#e879f9" : "#7dd3fc", borderRightColor: command ? "#a855f7" : "#3b82f6" }}
           />
         </div>
       );

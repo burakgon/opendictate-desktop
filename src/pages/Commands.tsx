@@ -18,7 +18,7 @@ import {
 import { useState } from "react";
 import { ModelPicker } from "../components/ModelPicker";
 import { Button, Field, Input, Keycaps, PageHeader, Row, Section, Segmented, Slider, TextArea, Toggle } from "../components/ui";
-import { api, type QuickAction, type SelectionMethod } from "../lib/api";
+import { api, type QuickAction, type Reasoning, type SelectionMethod } from "../lib/api";
 import { sameAccelerator } from "../lib/keys";
 import { useStore } from "../lib/store";
 
@@ -91,6 +91,37 @@ export function Commands({ navigate }: { navigate: (p: string) => void }) {
         <Section icon={<Brain className="size-4.5" />} title="Language model" description="Used for commands and quick actions. Fast models feel best.">
           <ModelPicker kind="llm" value={c.llm} onChange={(v) => update((s) => void (s.command.llm = v))} onNavigate={navigate} />
           <div className="mt-5">
+            <Row
+              label="Thinking"
+              description={
+                c.reasoning === "off"
+                  ? "Off: the fastest answers. Models that must think fall back to the minimum automatically."
+                  : c.reasoning === "low"
+                    ? "A little reasoning: slower, sometimes better at tricky requests."
+                    : "Use the model's own default (can add seconds)."
+              }
+            >
+              <Segmented<Reasoning>
+                value={c.reasoning}
+                onChange={(v) => update((s) => void (s.command.reasoning = v))}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "low", label: "Low" },
+                  { value: "default", label: "Model default" },
+                ]}
+              />
+            </Row>
+            <Row
+              label="Command word"
+              description="Start a normal dictation with this word to run it as a command instead — e.g. “Jarvis, make this formal”. Leave empty to turn off."
+            >
+              <Input
+                className="w-48"
+                value={c.trigger_word}
+                placeholder="e.g. Jarvis"
+                onChange={(e) => update((s) => void (s.command.trigger_word = e.target.value))}
+              />
+            </Row>
             <Row label="Creativity" description="Lower is more literal, higher is more inventive.">
               <Slider value={c.temperature} min={0} max={1.2} step={0.1} onChange={(v) => update((s) => void (s.command.temperature = v))} />
               <span className="w-8 text-right font-mono text-[12.5px] text-white/50">{c.temperature.toFixed(1)}</span>

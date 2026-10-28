@@ -119,7 +119,7 @@ impl Endpoint {
     pub fn resolve(providers: &Providers, id: &str) -> Result<Self> {
         let info = info(id).ok_or_else(|| anyhow!("unknown provider '{id}'"))?;
         let cfg: &ProviderConfig = providers.get(id).ok_or_else(|| anyhow!("unknown provider '{id}'"))?;
-        let base_url = if cfg.base_url.trim().is_empty() { info.base_url.to_string() } else { cfg.base_url.trim().to_string() };
+        let base_url = if cfg.base_url.trim().is_empty() { info.base_url.to_string() } else { normalize_base_url(&cfg.base_url) };
         let api_key = cfg.api_key.trim().to_string();
         if info.needs_key && api_key.is_empty() {
             bail!("No API key set for {}. Add one in Settings → Providers.", info.name);
@@ -138,12 +138,25 @@ impl Endpoint {
         }
         match self.info.id {
             "openrouter" => req
-                .header("HTTP-Referer", "https://github.com/burakgon/opendictate")
+                .header("HTTP-Referer", "https://github.com/burakgon/opendictate-desktop")
                 .header("X-Title", "OpenDictate"),
             "anthropic" => req.header("x-api-key", &self.api_key).header("anthropic-version", "2023-06-01"),
             _ => req,
         }
     }
+}
+
+/// Accepts pasted endpoint URLs such as `http://host:8000/v1/audio/transcriptions` and
+/// reduces them to the API root.
+pub fn normalize_base_url(url: &str) -> String {
+    let mut u = url.trim().trim_end_matches('/').to_string();
+    for suffix in ["/audio/transcriptions", "/audio/translations", "/chat/completions", "/completions", "/responses", "/models"] {
+        if u.to_lowercase().ends_with(suffix) {
+            u.truncate(u.len() - suffix.len());
+            break;
+        }
+    }
+    u.trim_end_matches('/').to_string()
 }
 
 pub fn client() -> reqwest::Client {
@@ -257,52 +270,118 @@ pub fn msg(role: &'static str, content: impl Into<String>) -> ChatMessage {
     ChatMessage { role, content: content.into() }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reasoning {
+    /// Ask the model not to think (fastest). Steps up automatically if a model insists.
+    Off,
+    Low,
+    /// Don't send any reasoning parameter.
+    Default,
+}
+
+/// Candidate request variants for a reasoning preference, tried in order.
+fn reasoning_variants(provider: &str, pref: Reasoning) -> Vec<Option<(&'static str, Value)>> {
+    match (provider, pref) {
+        (_, Reasoning::Default) => vec![None],
+        ("openrouter", Reasoning::Off) => vec![
+            Some(("reasoning", json!({ "enabled": false }))),
+            Some(("reasoning", json!({ "effort": "minimal" }))),
+            None,
+        ],
+        ("openrouter", Reasoning::Low) => vec![Some(("reasoning", json!({ "effort": "low" }))), None],
+        ("openai", Reasoning::Off) => vec![
+            Some(("reasoning_effort", json!("none"))),
+            Some(("reasoning_effort", json!("minimal"))),
+            None,
+        ],
+        ("openai", Reasoning::Low) => vec![Some(("reasoning_effort", json!("low"))), None],
+        _ => vec![None],
+    }
+}
+
+/// Remembers which reasoning variant a model accepted, so later requests don't retry.
+fn reasoning_cache() -> &'static parking_lot::Mutex<std::collections::HashMap<String, usize>> {
+    static CACHE: std::sync::OnceLock<parking_lot::Mutex<std::collections::HashMap<String, usize>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
 pub async fn chat(
     http: &reqwest::Client,
     ep: &Endpoint,
     model: &str,
     messages: &[ChatMessage],
     temperature: Option<f32>,
+    reasoning: Reasoning,
 ) -> Result<String> {
     if model.trim().is_empty() {
         bail!("No language model selected");
     }
-    let mut body = json!({ "model": model, "messages": messages, "stream": false });
-    if let Some(t) = temperature {
-        body["temperature"] = json!(t);
-    }
-    let send = |body: Value| ep.auth(ep.http_post(http, "chat/completions")).json(&body).timeout(Duration::from_secs(90)).send();
-    let mut resp = send(body.clone()).await?;
-    if resp.status() == reqwest::StatusCode::BAD_REQUEST && temperature.is_some() {
-        // Some reasoning models reject a custom temperature: retry without it.
-        let text = resp.text().await.unwrap_or_default();
-        if text.to_lowercase().contains("temperature") {
-            body.as_object_mut().map(|o| o.remove("temperature"));
-            resp = send(body).await?;
-        } else {
-            bail!("Language model request failed (400): {}", text.chars().take(300).collect::<String>());
+    let variants = reasoning_variants(ep.info.id, reasoning);
+    let cache_key = format!("{}:{model}:{reasoning:?}", ep.info.id);
+    let start = reasoning_cache().lock().get(&cache_key).copied().unwrap_or(0).min(variants.len() - 1);
+    let mut temperature = temperature;
+
+    let mut idx = start;
+    loop {
+        let mut body = json!({ "model": model, "messages": messages, "stream": false });
+        if let Some(t) = temperature {
+            body["temperature"] = json!(t);
         }
-    }
-    if !resp.status().is_success() {
-        return Err(error_from(resp, "Language model request").await);
-    }
-    let v: Value = resp.json().await?;
-    let content = v.pointer("/choices/0/message/content");
-    let text = match content {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|p| p.get("text").and_then(Value::as_str))
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => {
-            if let Some(err) = v.pointer("/error/message").and_then(Value::as_str) {
-                bail!("Language model error: {err}");
+        if let Some((key, value)) = &variants[idx] {
+            body[*key] = value.clone();
+        }
+        let resp = ep
+            .auth(ep.http_post(http, "chat/completions"))
+            .json(&body)
+            .timeout(Duration::from_secs(90))
+            .send()
+            .await?;
+        if resp.status() == reqwest::StatusCode::BAD_REQUEST || resp.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let lower = text.to_lowercase();
+            if lower.contains("reasoning") && idx + 1 < variants.len() {
+                // e.g. "Reasoning is mandatory for this endpoint and cannot be disabled."
+                log::info!("'{model}' rejected reasoning variant {idx}; stepping up");
+                idx += 1;
+                continue;
             }
-            bail!("The model returned an empty response")
+            if lower.contains("temperature") && temperature.is_some() {
+                // Some reasoning models only accept the default temperature.
+                temperature = None;
+                continue;
+            }
+            let detail = serde_json::from_str::<Value>(&text)
+                .ok()
+                .and_then(|v| v.pointer("/error/message").and_then(Value::as_str).map(str::to_string))
+                .unwrap_or_else(|| text.chars().take(300).collect());
+            bail!("Language model request failed ({status}): {detail}");
         }
-    };
-    Ok(clean_llm_output(&text))
+        if !resp.status().is_success() {
+            return Err(error_from(resp, "Language model request").await);
+        }
+        if idx != start {
+            reasoning_cache().lock().insert(cache_key, idx);
+        }
+        let v: Value = resp.json().await?;
+        let content = v.pointer("/choices/0/message/content");
+        let text = match content {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Array(parts)) => parts
+                .iter()
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => {
+                if let Some(err) = v.pointer("/error/message").and_then(Value::as_str) {
+                    bail!("Language model error: {err}");
+                }
+                bail!("The model returned an empty response")
+            }
+        };
+        return Ok(clean_llm_output(&text));
+    }
 }
 
 /// Strips wrappers models like to add even when told not to.
@@ -407,6 +486,20 @@ pub async fn test_provider(http: &reqwest::Client, ep: &Endpoint) -> Result<usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalizes_pasted_endpoints() {
+        assert_eq!(normalize_base_url("http://box:8000/v1/audio/transcriptions"), "http://box:8000/v1");
+        assert_eq!(normalize_base_url("http://localhost:11434/v1/chat/completions/"), "http://localhost:11434/v1");
+        assert_eq!(normalize_base_url(" https://api.groq.com/openai/v1/ "), "https://api.groq.com/openai/v1");
+    }
+
+    #[test]
+    fn reasoning_steps_up() {
+        assert_eq!(reasoning_variants("openrouter", Reasoning::Off).len(), 3);
+        assert_eq!(reasoning_variants("groq", Reasoning::Off), vec![None]);
+        assert_eq!(reasoning_variants("openai", Reasoning::Default), vec![None]);
+    }
 
     #[test]
     fn strips_fences_and_think() {

@@ -334,7 +334,7 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" variant="secondary" icon={<GithubMark className="size-3.5" />} onClick={() => openUrl("https://github.com/burakgon/opendictate")}>
+            <Button size="sm" variant="secondary" icon={<GithubMark className="size-3.5" />} onClick={() => openUrl("https://github.com/burakgon/opendictate-desktop")}>
               GitHub
             </Button>
             <Button
