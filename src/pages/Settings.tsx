@@ -26,7 +26,7 @@ import {
   type OverlayPosition,
   type PasteShortcut,
 } from "../lib/api";
-import { isModifier, sameAccelerator, splitAccelerator } from "../lib/keys";
+import { isCopilotKey, isModifier, sameAccelerator, splitAccelerator } from "../lib/keys";
 
 const isModifierOnly = (accel: string) => {
   const parts = splitAccelerator(accel);
@@ -141,7 +141,16 @@ export function SettingsPage() {
           )}
           <HotkeyRecorder value={hk.dictate} os={os} allowMouse={os === "linux"} onChange={(v) => update((s) => void (s.hotkeys.dictate = v))} />
         </Row>
-        <Row label="Voice command" description={shared ? "Hold and speak, then release — or double-tap, speak, tap" : MODES.find((m) => m.value === hk.command_mode)?.title}>
+        <Row
+          label="Voice command"
+          description={
+            shared
+              ? isCopilotKey(hk.command)
+                ? "Double-tap, speak, tap (the Copilot key can't be held)"
+                : "Hold and speak, then release — or double-tap, speak, tap"
+              : MODES.find((m) => m.value === hk.command_mode)?.title
+          }
+        >
           {!shared && (
             <Segmented<HotkeyMode> size="sm" value={hk.command_mode} onChange={(v) => update((s) => void (s.hotkeys.command_mode = v))} options={MODES} />
           )}

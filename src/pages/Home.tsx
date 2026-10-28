@@ -2,7 +2,7 @@ import { AlertTriangle, ArrowRight, Clock, Gauge, MessageSquareText, Mic, Rotate
 import { useEffect, useMemo, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, useEvent, type HistoryEntry, type Stats, type Status } from "../lib/api";
-import { sameAccelerator } from "../lib/keys";
+import { isCopilotKey, sameAccelerator } from "../lib/keys";
 import { hasKey, useStore } from "../lib/store";
 import { Button, Keycaps, TextArea, cx } from "../components/ui";
 import { LevelBars, StatusOrb } from "../components/Visuals";
@@ -135,7 +135,15 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
                     <div className="flex items-center gap-3">
                       <Keycaps accel={settings.hotkeys.command} os={os} />
                       <span>
-                        <b className="font-medium text-white/85">Hold</b> or <b className="font-medium text-white/85">double-tap</b> to speak a command
+                        {isCopilotKey(settings.hotkeys.command) ? (
+                          <>
+                            <b className="font-medium text-white/85">Double-tap</b> to speak a command, tap again to run it
+                          </>
+                        ) : (
+                          <>
+                            <b className="font-medium text-white/85">Hold</b> or <b className="font-medium text-white/85">double-tap</b> to speak a command
+                          </>
+                        )}
                       </span>
                     </div>
                   </>
