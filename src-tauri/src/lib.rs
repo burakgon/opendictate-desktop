@@ -6,6 +6,7 @@ mod commands;
 mod engine;
 mod history;
 mod media;
+mod notify;
 mod hotkeys;
 mod output;
 mod overlay;
@@ -13,6 +14,7 @@ mod platform;
 mod providers;
 mod settings;
 mod tray;
+mod updates;
 
 use std::sync::{atomic::AtomicBool, Arc};
 
@@ -143,6 +145,20 @@ pub fn run() {
         }
 
         // Never hide the first-run setup, even when launched with --hidden at login.
+        // Look for a newer release shortly after start and then once a day.
+        if current.general.check_updates {
+            let engine = engine.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                loop {
+                    if engine.settings.read().general.check_updates {
+                        engine.check_updates().await;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+                }
+            });
+        }
+
         let hidden = current.onboarded && (args.iter().any(|a| a == "--hidden") || current.general.start_hidden);
         let acted = handle_args(&handle, &args);
         if !hidden && !acted {
@@ -187,6 +203,7 @@ pub fn run() {
             commands::show_window,
             commands::pause_hotkeys,
             commands::open_shortcut_settings,
+            commands::update_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building OpenDictate");

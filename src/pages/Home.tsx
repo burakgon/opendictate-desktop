@@ -1,5 +1,6 @@
 import { AlertTriangle, ArrowRight, Clock, Gauge, MessageSquareText, Mic, RotateCcw, Sparkles, Wand2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, useEvent, type HistoryEntry, type Stats, type Status } from "../lib/api";
 import { sameAccelerator } from "../lib/keys";
 import { hasKey, useStore } from "../lib/store";
@@ -27,6 +28,11 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<HistoryEntry[]>([]);
   const [playground, setPlayground] = useState("");
+  const [update, setUpdate] = useState<{ version: string; url: string } | null>(null);
+  useEffect(() => {
+    api.updateInfo().then(setUpdate);
+  }, []);
+  useEvent<{ version: string; url: string }>("od://update", setUpdate);
   const os = system?.environment.os;
 
   const load = () => {
@@ -76,6 +82,15 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
               Retry
             </Button>
           )}
+        </div>
+      )}
+      {update && (
+        <div className="mb-5 flex items-center gap-3 rounded-xl border border-brand-400/25 bg-brand-500/[0.08] px-4 py-3">
+          <Sparkles className="size-4 shrink-0 text-brand-300" />
+          <div className="flex-1 text-[13.5px] text-white/85">OpenDictate {update.version} is available.</div>
+          <Button size="sm" variant="secondary" onClick={() => openUrl(update.url)}>
+            What's new
+          </Button>
         </div>
       )}
       {issues.length > 0 && (

@@ -291,3 +291,8 @@ pub fn pause_hotkeys(engine: State<'_, Arc<Engine>>, paused: bool) {
 pub fn open_shortcut_settings() -> R<()> {
     platform::open_shortcut_settings().map_err(|e| format!("{e:#}"))
 }
+
+#[tauri::command]
+pub fn update_info(engine: State<'_, Arc<Engine>>) -> Option<crate::updates::UpdateInfo> {
+    engine.update.lock().clone()
+}

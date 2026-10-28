@@ -2,6 +2,17 @@
 
 All notable changes to OpenDictate are documented here.
 
+## [0.1.1] - 2026-10-28
+
+### Added
+- Optionally pause music and videos (MPRIS players) while recording, and resume them afterwards.
+- "Update available" banner from a once-a-day check of the latest GitHub release (can be turned off).
+- Desktop notifications for errors when the overlay is turned off or unavailable.
+- Clear message when the microphone delivers digital silence (muted or wrong input).
+
+### Changed
+- The main window is created on first use: OpenDictate started in the tray (e.g. at login) no longer loads it, saving ~200 MB of memory.
+
 ## [0.1.0] - 2026-10-28
 
 First public release.

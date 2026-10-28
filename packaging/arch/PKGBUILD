@@ -1,7 +1,7 @@
 # Maintainer: Burak Gon <burakgon12@gmail.com>
 pkgname=opendictate-desktop-bin
 _pkgname=opendictate
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Voice dictation and voice commands for your desktop - tap to dictate, hold to command. Bring your own models."
 arch=('x86_64')

@@ -366,6 +366,9 @@ export function SettingsPage() {
         <Row label="Start in the tray" description="Don't open this window when OpenDictate starts.">
           <Toggle checked={settings.general.start_hidden} onChange={(v) => update((s) => void (s.general.start_hidden = v))} />
         </Row>
+        <Row label="Check for updates" description="Once a day, ask GitHub whether a newer version exists. Nothing is installed automatically.">
+          <Toggle checked={settings.general.check_updates} onChange={(v) => update((s) => void (s.general.check_updates = v))} />
+        </Row>
         <Row label="Keep history" description="Stored only on this computer.">
           <Toggle checked={settings.general.history_enabled} onChange={(v) => update((s) => void (s.general.history_enabled = v))} />
         </Row>

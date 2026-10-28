@@ -320,6 +320,8 @@ pub struct GeneralSettings {
     pub history_limit: usize,
     pub start_hidden: bool,
     pub theme: String,
+    /// Look for new releases on GitHub once a day (just a version check, no auto-update).
+    pub check_updates: bool,
 }
 
 impl Default for GeneralSettings {
@@ -331,6 +333,7 @@ impl Default for GeneralSettings {
             history_limit: 1000,
             start_hidden: false,
             theme: "dark".into(),
+            check_updates: true,
         }
     }
 }

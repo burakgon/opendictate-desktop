@@ -44,6 +44,7 @@ It works in every app — your browser, editor, terminal, chat, email — becaus
 - 🔁 **Keep talking.** Start the next dictation while the previous one is still being processed; results are typed in the order you spoke.
 - 🖥️ **Terminal-aware.** Detects when a terminal has focus (Konsole, GNOME Terminal, kitty, Alacritty, Ghostty, WezTerm, …) and pastes with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> — perfect for dictating prompts to CLI tools.
 - 🛟 **Never lose your words.** If a transcription fails (say, your Wi-Fi drops), the recording is kept and can be retried with one click.
+- 🎧 **Quiet please.** Optionally pause music and videos while you speak (any MPRIS player on Linux), and get told when your microphone is muted.
 - ⚙️ **Quick actions.** One-click prompts like *Fix grammar*, *Make formal* or *Translate to English* for the selected text — from the tray, the app, or the CLI.
 - 🫧 **A gorgeous, unobtrusive overlay.** A floating pill with a live waveform that never steals focus. On Wayland it's a true layer-shell surface.
 - 🔒 **Private by design.** Keys, settings and history stay on your computer. No telemetry. Temporary clipboard contents are marked so clipboard managers don't record them, and your clipboard is restored after pasting.
@@ -194,7 +195,7 @@ opendictate --hidden          Start in the tray
 - Audio and text are sent **only** to the provider you configure, only when you use a shortcut.
 - API keys, settings and history are stored locally (`~/.config/io.github.burakgon.OpenDictate/` and `~/.local/share/io.github.burakgon.OpenDictate/` on Linux) with owner-only permissions. History can be turned off.
 - Your clipboard is restored after pasting, and temporary clipboard contents are flagged so clipboard managers (Klipper, Windows clipboard history, macOS clipboard tools) don't keep them.
-- No analytics, no telemetry, no account.
+- No analytics, no telemetry, no account. The only other request is an optional once-a-day check of GitHub's "latest release" API to tell you when an update is available (Settings → Interface).
 
 ## FAQ
 

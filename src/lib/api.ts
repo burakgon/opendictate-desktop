@@ -92,6 +92,7 @@ export interface Settings {
     history_limit: number;
     start_hidden: boolean;
     theme: string;
+    check_updates: boolean;
   };
 }
 
@@ -203,6 +204,7 @@ export const api = {
   fixPermissions: (inputGroup: boolean) => invoke<string>("fix_permissions", { inputGroup }),
   pauseHotkeys: (paused: boolean) => invoke<void>("pause_hotkeys", { paused }),
   openShortcutSettings: () => invoke<void>("open_shortcut_settings"),
+  updateInfo: () => invoke<{ version: string; url: string } | null>("update_info"),
 };
 
 /** Subscribes to a backend event for the lifetime of the component. */

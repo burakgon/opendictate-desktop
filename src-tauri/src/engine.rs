@@ -169,6 +169,15 @@ pub struct Status {
     pub retryable: bool,
 }
 
+/// A recording after resampling and trimming.
+enum Prepared {
+    Speech(Arc<Vec<u8>>, f32),
+    /// Only background noise.
+    Silent,
+    /// Digital silence: the microphone is probably muted.
+    Muted,
+}
+
 /// A recording whose transcription failed, kept so it can be retried.
 #[derive(Clone)]
 struct FailedJob {
@@ -200,6 +209,7 @@ pub struct Engine {
     /// Serialises everything that touches the clipboard or presses keys.
     io_lock: tokio::sync::Mutex<()>,
     failed: Mutex<Option<FailedJob>>,
+    pub update: Mutex<Option<crate::updates::UpdateInfo>>,
 }
 
 const FEEDBACK_DELAY_MS: u64 = 130;
@@ -231,6 +241,7 @@ impl Engine {
             turns: Arc::new(Turnstile::default()),
             io_lock: tokio::sync::Mutex::new(()),
             failed: Mutex::new(None),
+            update: Mutex::new(None),
         });
         (engine, rx)
     }
@@ -613,8 +624,22 @@ impl Engine {
         tray::set_active(&self.app, self.busy());
     }
 
+    pub async fn check_updates(&self) {
+        if let Some(info) = crate::updates::check(&self.http).await {
+            log::info!("OpenDictate {} is available", info.version);
+            let _ = self.app.emit("od://update", &info);
+            *self.update.lock() = Some(info);
+        }
+    }
+
     fn fail(self: &Arc<Self>, id: u64, mode: Mode, message: String) {
         self.sound(Sound::Error);
+        {
+            let g = self.settings.read().general.clone();
+            if !g.show_overlay || !overlay::available() {
+                crate::notify::send("OpenDictate".into(), message.clone());
+            }
+        }
         let mut st = self.status("error", mode, id);
         st.message = Some(message);
         st.retryable = self.failed.lock().is_some();
@@ -744,7 +769,7 @@ impl Engine {
     }
 
     /// Resamples, trims and encodes a recording. `None` when there is no speech in it.
-    fn prepare_audio(settings: &Settings, captured: Captured) -> Result<Option<(Arc<Vec<u8>>, f32)>> {
+    fn prepare_audio(settings: &Settings, captured: Captured) -> Result<Prepared> {
         let captured = match std::env::var("OPENDICTATE_TEST_AUDIO") {
             Ok(path) if !path.is_empty() => audio::decode_wav(&std::fs::read(&path)?)?,
             _ => captured,
@@ -752,11 +777,13 @@ impl Engine {
         let pcm = audio::resample_to_16k(&captured.samples, captured.sample_rate);
         let analysis = audio::analyse(&pcm);
         if !analysis.has_speech {
-            return Ok(None);
+            // Digital silence (not just a quiet room) usually means a muted or wrong microphone.
+            let peak = pcm.iter().fold(0f32, |m, v| m.max(v.abs()));
+            return Ok(if pcm.len() > audio::TARGET_RATE as usize / 2 && peak < 0.0005 { Prepared::Muted } else { Prepared::Silent });
         }
         let slice = if settings.audio.trim_silence { &pcm[analysis.start..analysis.end] } else { &pcm[..] };
         let secs = slice.len() as f32 / audio::TARGET_RATE as f32;
-        Ok(Some((Arc::new(audio::encode_wav(slice, audio::TARGET_RATE)?), secs)))
+        Ok(Prepared::Speech(Arc::new(audio::encode_wav(slice, audio::TARGET_RATE)?), secs))
     }
 
     /// Transcribes a prepared recording. On failure the audio is kept for [`Trigger::Retry`].
@@ -838,8 +865,12 @@ impl Engine {
             let settings = settings.clone();
             tokio::task::spawn_blocking(move || Self::prepare_audio(&settings, captured)).await??
         };
-        let Some((wav, secs)) = prepared else {
-            return Ok(Outcome::Nothing("No speech detected".into()));
+        let (wav, secs) = match prepared {
+            Prepared::Speech(wav, secs) => (wav, secs),
+            Prepared::Silent => return Ok(Outcome::Nothing("No speech detected".into())),
+            Prepared::Muted => {
+                return Err(anyhow!("No sound from the microphone. Is it muted, or is another input selected? Check Settings → Microphone."))
+            }
         };
         self.process_wav(id, mode, wav, secs, turn).await
     }
