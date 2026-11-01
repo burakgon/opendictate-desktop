@@ -8,6 +8,7 @@ keys/
 node_modules/
 dist/
 *.log
+*.tsbuildinfo
 
 # Rust / Tauri
 src-tauri/target/
