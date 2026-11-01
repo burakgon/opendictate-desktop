@@ -62,7 +62,10 @@ The result is checked with Gatekeeper (`spctl`) at the end. A Developer ID signa
 Accessibility and microphone permissions across updates.
 
 **Releases on GitHub** are signed and notarized the same way when these repository secrets exist (otherwise they are
-ad-hoc signed):
+ad-hoc signed). `scripts/macos-signing-secrets.sh DeveloperID.p12` sets them: export the identity from Keychain Access
+(*My Certificates* → right-click → *Export…*), run the script, and it checks the certificate with Apple, asks for an
+Apple ID and app-specific password for notarization (or takes `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`)
+and verifies them before storing anything (`--check` stops there).
 
 | Secret | Value |
 | --- | --- |
@@ -71,6 +74,7 @@ ad-hoc signed):
 | `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
 | `APPLE_API_KEY`, `APPLE_API_ISSUER` | App Store Connect API key ID and issuer ID (for notarization) |
 | `APPLE_API_KEY_P8` | the contents of the `AuthKey_<key id>.p8` file |
+| or `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | an Apple ID with an app-specific password, instead of an API key |
 
 ## Guidelines
 

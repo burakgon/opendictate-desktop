@@ -91,6 +91,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
             echo "::warning::No Apple signing secrets: the macOS build is ad-hoc signed and not notarized."
@@ -109,8 +112,15 @@ jobs:
               echo "APPLE_API_KEY=$APPLE_API_KEY"
               echo "APPLE_API_KEY_PATH=$key"
             } >> "$GITHUB_ENV"
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            # An app-specific password (account.apple.com → Sign-In and Security).
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
           else
-            echo "::warning::No App Store Connect API key secrets: the macOS build is signed but not notarized."
+            echo "::warning::No notarization secrets (APPLE_API_* or APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID): the macOS build is signed but not notarized."
           fi
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -120,11 +130,21 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }} ${{ env.UPDATER_ARGS }}
+          # latest.json is written once, after every build (publish-release): builds merging their
+          # own entries into it can drop each other's when they finish at the same time.
+          includeUpdaterJson: false
 
   publish-release:
     needs: [create-release, build]
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}" -F draft=false -f make_latest=true --jq '.html_url'
+      - uses: actions/checkout@v4
+      - name: Write latest.json
+        env:
+          TAG: ${{ github.ref_name }}
+        run: scripts/latest-json.sh "$TAG"
+      # "legacy": the newest version becomes the latest release, also when an older tag is rebuilt.
+      - name: Publish
+        run: gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}" -F draft=false -f make_latest=legacy --jq '.html_url'
