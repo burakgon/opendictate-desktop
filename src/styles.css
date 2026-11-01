@@ -22,7 +22,9 @@
 
   --animate-pulse-ring: pulse-ring 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
   --animate-shimmer: shimmer 1.8s linear infinite;
-  --animate-fade-in: fade-in 0.35s ease-out both;
+  /* "backwards", not "both": an animation that keeps applying its last frame keeps the element a
+     stacking context, and the cards after it would then cover any dropdown inside it. */
+  --animate-fade-in: fade-in 0.35s ease-out backwards;
   --animate-float: float 6s ease-in-out infinite;
 
   @keyframes pulse-ring {
