@@ -2,6 +2,28 @@
 
 All notable changes to OpenDictate are documented here.
 
+## [0.2.0] - 2026-11-01
+
+### Updates
+- OpenDictate updates itself: once a day it looks at the latest GitHub release, and on macOS, Windows and the Linux AppImage one click downloads the update, checks its signature, installs it and restarts. Also from the tray / menu bar menu, and *Settings → Interface → Check now*. Other packages (deb, rpm, AUR) link to the release page.
+
+### macOS
+- OpenDictate is now a native menu bar app: no Dock icon until its window is opened, a monochrome menu bar icon that follows light and dark menu bars, a standard app menu (⌘, ⌘W, ⌘Q, Edit menu for text fields) and the window with native traffic lights, corners and shadow. Clicking the app in Finder or Spotlight opens the window.
+- The overlay is a native HUD (AppKit and Core Animation) instead of a web view: it never takes keyboard focus, floats above full-screen apps and on every Space, survives "Hide OpenDictate", and follows the screen you are working on.
+- Single-key shortcuts: Right ⌘ (the new default: tap to dictate, hold or double-tap for a command), Right ⌥, fn, or a mouse side button. Key combinations keep using system hotkeys, so they also work in secure text fields. Esc cancels, and is only grabbed while OpenDictate is busy.
+- Pasting uses the keyboard layout you type with (Dvorak, AZERTY, …) and modifier keys you still hold no longer turn ⌘V into another shortcut.
+- The clipboard is restored with everything that was on it — images, files, rich text — and left alone if another app changed it in the meantime.
+- The selected text is read through the accessibility API when the app supports it, without pressing ⌘C or touching the clipboard.
+- Permissions: a macOS permissions section in Settings and in the first-run setup, with live status and one-click prompts for Accessibility and the microphone; OpenDictate no longer asks for Accessibility the moment it starts, and explains a missing microphone permission instead of recording silence.
+- `opendictate://` URLs (toggle, command, action/<id>, show/<page>, …) for Shortcuts, Raycast, Alfred and scripts.
+- Lighter: about 20 MB of memory in the background (no web view at all until the window is opened, and its content process is released when it is closed), UI sounds through NSSound, no App Nap delays while dictating.
+- The app bundle is ad-hoc signed as a whole with the hardened runtime and the microphone entitlement.
+- `npm run release:mac` builds a universal app and DMG, signed with a Developer ID and notarized when the credentials are
+  available; GitHub releases do the same once the signing secrets are set (see CONTRIBUTING.md).
+
+### Fixed
+- The onboarding no longer jumps back to the start after granting Linux permissions on the permissions step.
+
 ## [0.1.1] - 2026-10-28
 
 ### Added

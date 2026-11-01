@@ -12,6 +12,7 @@ pub enum Chord {
     Paste(PasteShortcut),
     Copy,
     /// Terminals copy with Ctrl+Shift+C (Ctrl+C would interrupt the running program).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     CopyTerminal,
 }
 
@@ -84,7 +85,7 @@ mod keys {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
 mod keys {
     use anyhow::{anyhow, Result};
     use enigo::{Direction, Enigo, Key, Keyboard, Settings};
@@ -106,17 +107,11 @@ mod keys {
         }
 
         pub fn chord(&mut self, chord: Chord) -> Result<()> {
-            #[cfg(target_os = "macos")]
-            let primary = Key::Meta;
-            #[cfg(not(target_os = "macos"))]
             let primary = Key::Control;
             let (mods, key): (Vec<Key>, Key) = match chord {
                 Chord::Paste(PasteShortcut::CtrlV | PasteShortcut::Auto) => (vec![primary], Key::Unicode('v')),
                 Chord::Paste(PasteShortcut::CtrlShiftV) => (vec![primary, Key::Shift], Key::Unicode('v')),
-                #[cfg(not(target_os = "macos"))]
                 Chord::Paste(PasteShortcut::ShiftInsert) => (vec![Key::Shift], Key::Insert),
-                #[cfg(target_os = "macos")]
-                Chord::Paste(PasteShortcut::ShiftInsert) => (vec![primary], Key::Unicode('v')),
                 Chord::Copy => (vec![primary], Key::Unicode('c')),
                 Chord::CopyTerminal => (vec![primary, Key::Shift], Key::Unicode('c')),
             };
@@ -138,6 +133,41 @@ mod keys {
     }
 }
 
+/// macOS: CoreGraphics events with the user's keyboard layout (see `crate::macos::keys`).
+/// Terminals paste with ⌘V and copy with ⌘C like every other app, so there are no special chords.
+#[cfg(target_os = "macos")]
+mod keys {
+    use anyhow::{anyhow, Result};
+
+    use super::Chord;
+    use crate::{macos, settings::PasteShortcut};
+
+    pub struct Keys;
+
+    impl Keys {
+        pub fn new() -> Result<Self> {
+            if macos::permissions::accessibility_trusted() {
+                Ok(Self)
+            } else {
+                Err(anyhow!("Accessibility permission is needed to paste into other apps"))
+            }
+        }
+
+        pub fn chord(&mut self, chord: Chord) -> Result<()> {
+            match chord {
+                Chord::Paste(PasteShortcut::CtrlShiftV) => macos::keys::paste(true),
+                Chord::Paste(_) => macos::keys::paste(false),
+                Chord::Copy | Chord::CopyTerminal => macos::keys::copy(),
+            }
+        }
+
+        pub fn type_text(&mut self, text: &str) -> Result<bool> {
+            macos::keys::type_text(text)?;
+            Ok(true)
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub use keys::DEVICE_NAME as VIRTUAL_KEYBOARD_NAME;
 
@@ -148,12 +178,18 @@ pub use keys::DEVICE_NAME as VIRTUAL_KEYBOARD_NAME;
 pub struct Output {
     keys: Mutex<Option<keys::Keys>>,
     keys_error: Mutex<Option<String>>,
+    #[cfg(not(target_os = "macos"))]
     clipboard: Mutex<Option<arboard::Clipboard>>,
 }
 
 impl Output {
     pub fn new() -> Self {
-        let out = Self { keys: Mutex::new(None), keys_error: Mutex::new(None), clipboard: Mutex::new(None) };
+        let out = Self {
+            keys: Mutex::new(None),
+            keys_error: Mutex::new(None),
+            #[cfg(not(target_os = "macos"))]
+            clipboard: Mutex::new(None),
+        };
         out.ensure_keys();
         out
     }
@@ -161,6 +197,11 @@ impl Output {
     /// Lazily creates the key injector (retrying after permission fixes).
     fn ensure_keys(&self) -> bool {
         let mut k = self.keys.lock();
+        // macOS: the permission can be granted or revoked at any time; checking it is cheap.
+        #[cfg(target_os = "macos")]
+        if !crate::macos::permissions::accessibility_trusted() {
+            *k = None;
+        }
         if k.is_some() {
             return true;
         }
@@ -174,8 +215,12 @@ impl Output {
                 true
             }
             Err(e) => {
-                log::warn!("key injection unavailable: {e:#}");
-                *self.keys_error.lock() = Some(format!("{e:#}"));
+                let msg = format!("{e:#}");
+                let mut last = self.keys_error.lock();
+                if last.as_deref() != Some(msg.as_str()) {
+                    log::warn!("key injection unavailable: {msg}");
+                }
+                *last = Some(msg);
                 false
             }
         }
@@ -199,6 +244,35 @@ impl Output {
         self.keys.lock().as_mut().unwrap().chord(chord)
     }
 
+    /// Inserts text at the cursor of the focused application.
+    pub fn insert(&self, text: &str, cfg: &OutputSettings, terminal: bool) -> Result<InsertOutcome> {
+        if text.is_empty() {
+            return Ok(InsertOutcome::Inserted);
+        }
+        match cfg.method {
+            OutputMethod::Clipboard => {
+                // The user wants this one on the clipboard (and in its history).
+                self.set_clipboard(text)?;
+                Ok(InsertOutcome::CopiedOnly)
+            }
+            OutputMethod::Type => {
+                if self.ensure_keys() {
+                    if let Some(k) = self.keys.lock().as_mut() {
+                        if k.type_text(text)? {
+                            return Ok(InsertOutcome::Inserted);
+                        }
+                    }
+                }
+                self.paste(text, cfg, terminal)
+            }
+            OutputMethod::Paste => self.paste(text, cfg, terminal),
+        }
+    }
+}
+
+// Linux and Windows: the clipboard through arboard; text-only save/restore.
+#[cfg(not(target_os = "macos"))]
+impl Output {
     fn with_clipboard<T>(&self, f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>) -> Result<T> {
         let mut guard = self.clipboard.lock();
         if guard.is_none() {
@@ -224,11 +298,6 @@ impl Output {
             #[cfg(target_os = "linux")]
             {
                 use arboard::SetExtLinux;
-                c.set().exclude_from_history().text(text)
-            }
-            #[cfg(target_os = "macos")]
-            {
-                use arboard::SetExtApple;
                 c.set().exclude_from_history().text(text)
             }
             #[cfg(target_os = "windows")]
@@ -301,31 +370,6 @@ impl Output {
         }
     }
 
-    /// Inserts text at the cursor of the focused application.
-    pub fn insert(&self, text: &str, cfg: &OutputSettings, terminal: bool) -> Result<InsertOutcome> {
-        if text.is_empty() {
-            return Ok(InsertOutcome::Inserted);
-        }
-        match cfg.method {
-            OutputMethod::Clipboard => {
-                // The user wants this one on the clipboard (and in its history).
-                self.set_clipboard(text)?;
-                Ok(InsertOutcome::CopiedOnly)
-            }
-            OutputMethod::Type => {
-                if self.ensure_keys() {
-                    if let Some(k) = self.keys.lock().as_mut() {
-                        if k.type_text(text)? {
-                            return Ok(InsertOutcome::Inserted);
-                        }
-                    }
-                }
-                self.paste(text, cfg, terminal)
-            }
-            OutputMethod::Paste => self.paste(text, cfg, terminal),
-        }
-    }
-
     fn paste(&self, text: &str, cfg: &OutputSettings, terminal: bool) -> Result<InsertOutcome> {
         if !self.ensure_keys() {
             // Leave the text on the clipboard so nothing is lost.
@@ -350,6 +394,73 @@ impl Output {
             thread::sleep(Duration::from_millis(350));
             if let Some(p) = previous {
                 let _ = self.set_clipboard_private(&p);
+            }
+        }
+        Ok(InsertOutcome::Inserted)
+    }
+}
+
+// macOS: NSPasteboard directly. Every item and format on the clipboard (images, files, rich text)
+// is put back after OpenDictate borrows it, and the selection is read through the accessibility
+// API when the app supports it, without touching the clipboard at all.
+#[cfg(target_os = "macos")]
+impl Output {
+    /// Sets the clipboard (e.g. when the user clicks "Copy").
+    pub fn set_clipboard(&self, text: &str) -> Result<()> {
+        crate::macos::pasteboard::set_text(text, false);
+        Ok(())
+    }
+
+    pub fn capture_selection(&self, method: SelectionMethod, _terminal: bool) -> (Option<String>, Option<String>) {
+        use crate::macos::{pasteboard, system};
+        if method == SelectionMethod::None {
+            return (None, None);
+        }
+        if let Some(text) = system::selected_text() {
+            log::debug!("selection read through accessibility ({} chars)", text.chars().count());
+            return (Some(text), None);
+        }
+        // Fall back to ⌘C. Apps only write to the clipboard when something is selected, so a
+        // change of the clipboard's change count means "there is a selection".
+        let saved = pasteboard::snapshot();
+        let before = pasteboard::change_count();
+        if let Err(e) = self.chord(Chord::Copy) {
+            log::warn!("could not send ⌘C: {e:#}");
+            return (None, None);
+        }
+        let mut selection = None;
+        for _ in 0..25 {
+            thread::sleep(Duration::from_millis(16));
+            if pasteboard::change_count() != before {
+                // Give the app a moment to finish writing all of its formats.
+                thread::sleep(Duration::from_millis(15));
+                selection = pasteboard::get_text();
+                break;
+            }
+        }
+        if pasteboard::change_count() != before {
+            pasteboard::restore(saved);
+        }
+        (selection.filter(|s| !s.trim().is_empty()), None)
+    }
+
+    fn paste(&self, text: &str, cfg: &OutputSettings, _terminal: bool) -> Result<InsertOutcome> {
+        use crate::macos::pasteboard;
+        if !self.ensure_keys() {
+            // No Accessibility permission: leave the text on the clipboard so nothing is lost.
+            pasteboard::set_text(text, false);
+            return Ok(InsertOutcome::CopiedOnly);
+        }
+        let saved = cfg.restore_clipboard.then(pasteboard::snapshot);
+        let ours = pasteboard::set_text(text, cfg.restore_clipboard);
+        self.chord(Chord::Paste(cfg.paste_shortcut))?;
+        if let Some(saved) = saved {
+            // Apps read the clipboard asynchronously after the key press.
+            thread::sleep(Duration::from_millis(400));
+            if pasteboard::change_count() == ours {
+                pasteboard::restore(saved);
+            } else {
+                log::debug!("the clipboard changed while pasting; not restoring it");
             }
         }
         Ok(InsertOutcome::Inserted)

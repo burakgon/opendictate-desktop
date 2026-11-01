@@ -20,7 +20,8 @@ export function TitleBar({ os }: { os?: string }) {
   const isMac = os === "macos";
 
   return (
-    <div data-tauri-drag-region className="flex h-11 shrink-0 items-center justify-end px-2" onDoubleClick={() => w.toggleMaximize()}>
+    // Double-clicking a drag region already zooms the window on macOS.
+    <div data-tauri-drag-region className="flex h-11 shrink-0 items-center justify-end px-2" onDoubleClick={isMac ? undefined : () => w.toggleMaximize()}>
       {!isMac && (
         <div className="flex items-center gap-0.5">
           <button

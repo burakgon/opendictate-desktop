@@ -48,5 +48,5 @@ jobs:
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Clippy
-        if: runner.os == 'Linux'
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
+        if: runner.os != 'Windows'
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings

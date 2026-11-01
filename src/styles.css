@@ -111,6 +111,12 @@ textarea,
   border-radius: 0 !important;
 }
 
+/* macOS draws the window frame, corners and shadow itself. */
+.platform-macos .app-frame {
+  border-radius: 0 !important;
+  border-width: 0 !important;
+}
+
 /* Scrollbars */
 .scroll-area {
   overflow-y: auto;
@@ -136,6 +142,17 @@ textarea,
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* Soft colour glows. Radial gradients rather than `filter: blur()`: no compositing artefacts in
+   WebKit, and far cheaper to draw. */
+.glow-brand {
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.09) 50%, rgba(139, 92, 246, 0) 100%);
+}
+.glow-accent {
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(6, 182, 212, 0.15), rgba(6, 182, 212, 0.06) 50%, rgba(6, 182, 212, 0) 100%);
 }
 
 .brand-gradient {

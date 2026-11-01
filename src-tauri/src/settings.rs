@@ -224,8 +224,10 @@ pub struct HotkeySettings {
 
 impl Default for HotkeySettings {
     fn default() -> Self {
+        // macOS: Right ⌘ alone, like Right Ctrl on Linux: tap to dictate, hold (or double-tap)
+        // for a voice command.
         #[cfg(target_os = "macos")]
-        let (dictate, command) = ("Alt+Space", "Alt+Shift+Space");
+        let (dictate, command) = ("RightSuper", "RightSuper");
         #[cfg(target_os = "windows")]
         let (dictate, command) = ("Ctrl+Alt+Space", "Ctrl+Alt+Shift+Space");
         #[cfg(target_os = "linux")]

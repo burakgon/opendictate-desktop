@@ -1,20 +1,38 @@
 //! The floating status pill shown while listening / thinking.
 //!
+//! On macOS it is a native HUD panel (see `crate::macos::overlay`): no web view, never takes
+//! focus, floats above full-screen apps.
+//!
 //! On Wayland compositors that support `wlr-layer-shell` (KDE Plasma, Hyprland, Sway, ...)
 //! the window becomes a layer surface: it is anchored to the screen edge, never takes keyboard
 //! focus and lets clicks pass through. Elsewhere it is a borderless, non-focusable,
 //! always-on-top window placed near the bottom of the screen.
 
-use tauri::{AppHandle, LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+#[cfg(not(target_os = "macos"))]
+use tauri::{LogicalSize, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::AppHandle;
 
-use crate::settings::OverlayPosition;
+use crate::{engine::Status, settings::OverlayPosition};
 
+#[cfg(not(target_os = "macos"))]
 pub const LABEL: &str = "overlay";
+#[cfg(not(target_os = "macos"))]
 const WIDTH: f64 = 480.0;
+#[cfg(not(target_os = "macos"))]
 const HEIGHT: f64 = 132.0;
+#[cfg(not(target_os = "macos"))]
 const MARGIN: i32 = 28;
 
-pub fn create(app: &AppHandle, position: OverlayPosition) -> tauri::Result<WebviewWindow> {
+/// Creates the (hidden) overlay. Must be called on the main thread.
+#[cfg(target_os = "macos")]
+pub fn create(_app: &AppHandle, position: OverlayPosition) -> tauri::Result<()> {
+    crate::macos::overlay::create(position);
+    Ok(())
+}
+
+/// Creates the (hidden) overlay window.
+#[cfg(not(target_os = "macos"))]
+pub fn create(app: &AppHandle, position: OverlayPosition) -> tauri::Result<()> {
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("overlay.html".into()))
         .title("OpenDictate")
         .inner_size(WIDTH, HEIGHT)
@@ -39,9 +57,26 @@ pub fn create(app: &AppHandle, position: OverlayPosition) -> tauri::Result<Webvi
     }
     #[cfg(not(target_os = "linux"))]
     {
+        let _ = position;
         let _ = window.set_ignore_cursor_events(true);
     }
-    Ok(window)
+    Ok(())
+}
+
+/// Shows the latest status in the native overlay (the web overlay listens to `od://status`).
+pub fn update(_app: &AppHandle, status: &Status) {
+    #[cfg(target_os = "macos")]
+    crate::macos::overlay::update(status);
+    #[cfg(not(target_os = "macos"))]
+    let _ = status;
+}
+
+/// Feeds the native overlay's waveform (the web overlay listens to `od://level`).
+pub fn level(_app: &AppHandle, value: f32) {
+    #[cfg(target_os = "macos")]
+    crate::macos::overlay::level(value);
+    #[cfg(not(target_os = "macos"))]
+    let _ = value;
 }
 
 #[cfg(target_os = "linux")]
@@ -63,6 +98,7 @@ pub fn available() -> bool {
     }
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn uses_layer_shell() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -74,6 +110,7 @@ pub fn uses_layer_shell() -> bool {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn place(window: &WebviewWindow, position: OverlayPosition) {
     if uses_layer_shell() {
         #[cfg(target_os = "linux")]
@@ -99,6 +136,17 @@ pub fn show(app: &AppHandle, position: OverlayPosition) {
     if !available() {
         return;
     }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        crate::macos::overlay::show(position);
+    }
+    #[cfg(not(target_os = "macos"))]
+    show_window(app, position);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_window(app: &AppHandle, position: OverlayPosition) {
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = app2.get_webview_window(LABEL) {
@@ -115,6 +163,17 @@ pub fn show(app: &AppHandle, position: OverlayPosition) {
 }
 
 pub fn hide(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        crate::macos::overlay::hide();
+    }
+    #[cfg(not(target_os = "macos"))]
+    hide_window(app);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_window(app: &AppHandle) {
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = app2.get_webview_window(LABEL) {

@@ -16,6 +16,10 @@ pub struct Environment {
     pub layer_shell: bool,
     /// The floating overlay can be used on this desktop.
     pub overlay_available: bool,
+    /// macOS: allowed to paste into other apps, read the selection and watch single-key shortcuts.
+    pub accessibility: bool,
+    /// macOS microphone access: `granted`, `denied`, `restricted` or `undetermined`.
+    pub microphone: &'static str,
 }
 
 pub fn environment() -> Environment {
@@ -40,12 +44,15 @@ pub fn environment() -> Environment {
             relogin_required: !input_access && user_listed_in_group("input"),
             layer_shell: crate::overlay::uses_layer_shell(),
             overlay_available: crate::overlay::available(),
+            accessibility: true,
+            microphone: "granted",
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
     {
+        use crate::macos::permissions;
         Environment {
-            os: if cfg!(target_os = "macos") { "macos" } else { "windows" },
+            os: "macos",
             session_type: String::new(),
             desktop: String::new(),
             input_access: true,
@@ -53,7 +60,68 @@ pub fn environment() -> Environment {
             relogin_required: false,
             layer_shell: false,
             overlay_available: true,
+            accessibility: permissions::accessibility_trusted(),
+            microphone: permissions::microphone_status(),
         }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Environment {
+            os: "windows",
+            session_type: String::new(),
+            desktop: String::new(),
+            input_access: true,
+            uinput_access: true,
+            relogin_required: false,
+            layer_shell: false,
+            overlay_available: true,
+            accessibility: true,
+            microphone: "granted",
+        }
+    }
+}
+
+/// Asks for a macOS privacy permission (`accessibility` or `microphone`): shows the system prompt
+/// the first time, and opens the matching System Settings pane once the user has answered.
+#[cfg(target_os = "macos")]
+pub fn request_permission(kind: &str) -> anyhow::Result<()> {
+    use crate::macos::permissions;
+    match kind {
+        "accessibility" => {
+            if !permissions::accessibility_trusted() {
+                // Adds OpenDictate to the list in System Settings and shows macOS' own alert,
+                // which has a button that opens the right pane.
+                permissions::request_accessibility();
+            }
+            Ok(())
+        }
+        "microphone" => match permissions::microphone_status() {
+            "undetermined" => {
+                permissions::request_microphone();
+                Ok(())
+            }
+            "granted" => Ok(()),
+            _ => permissions::open_privacy_pane("microphone"),
+        },
+        other => anyhow::bail!("unknown permission '{other}'"),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn request_permission(_kind: &str) -> anyhow::Result<()> {
+    Ok(())
+}
+
+/// Opens System Settings → Privacy & Security at `pane` (macOS).
+pub fn open_privacy_settings(pane: &str) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::permissions::open_privacy_pane(pane)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pane;
+        Ok(())
     }
 }
 
@@ -195,7 +263,11 @@ pub fn open_shortcut_settings() -> anyhow::Result<()> {
         }
         anyhow::bail!("couldn't find your desktop's shortcut settings")
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::system::open_url("x-apple.systempreferences:com.apple.Keyboard-Settings.extension")
+    }
+    #[cfg(target_os = "windows")]
     {
         Ok(())
     }

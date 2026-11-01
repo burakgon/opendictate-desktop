@@ -152,6 +152,20 @@ export interface Stats {
   first_use: number;
 }
 
+export interface UpdateInfo {
+  version: string;
+  /** The release page. */
+  url: string;
+  notes: string | null;
+  /** This copy can download and install the update itself. */
+  can_install: boolean;
+}
+
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
 export interface SystemStatus {
   version: string;
   environment: {
@@ -163,6 +177,9 @@ export interface SystemStatus {
     relogin_required: boolean;
     layer_shell: boolean;
     overlay_available: boolean;
+    /** macOS: may paste into other apps, read the selection and watch single-key shortcuts. */
+    accessibility: boolean;
+    microphone: "granted" | "denied" | "restricted" | "undetermined";
   };
   hotkeys: {
     backend: string;
@@ -204,7 +221,14 @@ export const api = {
   fixPermissions: (inputGroup: boolean) => invoke<string>("fix_permissions", { inputGroup }),
   pauseHotkeys: (paused: boolean) => invoke<void>("pause_hotkeys", { paused }),
   openShortcutSettings: () => invoke<void>("open_shortcut_settings"),
-  updateInfo: () => invoke<{ version: string; url: string } | null>("update_info"),
+  updateInfo: () => invoke<UpdateInfo | null>("update_info"),
+  checkForUpdates: () => invoke<UpdateInfo | null>("check_for_updates"),
+  /** Downloads, verifies and installs the latest release, then restarts the app. */
+  installUpdate: () => invoke<void>("install_update"),
+  /** macOS: shows the system prompt for a privacy permission. */
+  requestPermission: (kind: "accessibility" | "microphone") => invoke<void>("request_permission", { kind }),
+  /** macOS: opens System Settings → Privacy & Security at the given pane. */
+  openPrivacySettings: (pane: "accessibility" | "microphone" | "input_monitoring") => invoke<void>("open_privacy_settings", { pane }),
 };
 
 /** Subscribes to a backend event for the lifetime of the component. */

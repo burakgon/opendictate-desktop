@@ -14,6 +14,8 @@ pub struct HotkeyManager {
     evdev: Mutex<Option<Arc<super::evdev_backend::EvdevListener>>>,
     #[cfg(target_os = "linux")]
     portal: Mutex<Option<(Vec<String>, super::portal_backend::PortalHandle)>>,
+    #[cfg(target_os = "macos")]
+    tap: super::macos_backend::TapListener,
 }
 
 impl HotkeyManager {
@@ -24,6 +26,8 @@ impl HotkeyManager {
             evdev: Mutex::new(None),
             #[cfg(target_os = "linux")]
             portal: Mutex::new(None),
+            #[cfg(target_os = "macos")]
+            tap: super::macos_backend::TapListener::new(),
         }
     }
 
@@ -120,27 +124,68 @@ impl HotkeyManager {
         *self.status.lock() = status;
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
     fn apply_native(&self, app: &AppHandle, backend: HotkeyBackend, binds: Vec<Binding>, tx: EventTx) {
-        use tauri_plugin_global_shortcut::GlobalShortcutExt;
         let mut status = HotkeyStatus::default();
         if backend == HotkeyBackend::Disabled {
-            let _ = app.global_shortcut().unregister_all();
+            super::native_backend::unregister_all(app);
             status.backend = "none".into();
             status.ok = true;
             status.message = "Global hotkeys are off.".into();
         } else {
             status.backend = "native".into();
-            match super::native_backend::apply(app, &binds, tx) {
-                Ok(()) => {
-                    status.ok = true;
-                    status.message = "Global shortcuts registered.".into();
-                }
-                Err(e) => {
-                    status.ok = false;
-                    status.message = format!("{e:#}");
-                }
+            let failed = super::native_backend::apply(app, &binds, tx);
+            status.ok = failed.is_empty();
+            status.message = if failed.is_empty() {
+                "Global shortcuts registered.".into()
+            } else {
+                failed.iter().map(|(b, e)| format!("{}: {e}", b.slot.id())).collect::<Vec<_>>().join("; ")
+            };
+        }
+        *self.status.lock() = status;
+    }
+
+    /// macOS: key combinations become Carbon hotkeys (no permission needed, and they keep working
+    /// in secure text fields); single modifier keys, fn and mouse buttons - and any combination
+    /// another app already owns - go through the event tap.
+    #[cfg(target_os = "macos")]
+    fn apply_native(&self, app: &AppHandle, backend: HotkeyBackend, binds: Vec<Binding>, tx: EventTx) {
+        use super::macos_backend::{needs_tap, TapState};
+
+        let mut status = HotkeyStatus { backend: "native".into(), ..Default::default() };
+        if backend == HotkeyBackend::Disabled {
+            super::native_backend::unregister_all(app);
+            self.tap.stop();
+            status.backend = "none".into();
+            status.ok = true;
+            status.message = "Global hotkeys are off.".into();
+            *self.status.lock() = status;
+            return;
+        }
+        let (mut tap_binds, carbon): (Vec<Binding>, Vec<Binding>) = binds.into_iter().partition(needs_tap);
+        for (b, e) in super::native_backend::apply(app, &carbon, tx.clone()) {
+            log::info!("hotkeys: {} can't be a system hotkey ({e}); using the event tap", b.tokens.join("+"));
+            tap_binds.push(b);
+        }
+        // Publish the status before the tap starts: its permission watcher updates it later.
+        status.ok = true;
+        status.message = "Global shortcuts registered.".into();
+        *self.status.lock() = status.clone();
+        let (state, errors) = self.tap.configure(&tap_binds, tx, self.status.clone());
+        match state {
+            TapState::Idle | TapState::Running => {}
+            TapState::NeedsPermission => {
+                status.ok = false;
+                status.message = "Waiting for Accessibility permission: single-key shortcuts (like Right ⌘ or fn) need it. Allow OpenDictate in System Settings → Privacy & Security → Accessibility.".into();
             }
+            TapState::Failed(e) => {
+                status.ok = false;
+                status.message = e;
+            }
+        }
+        if !errors.is_empty() {
+            status.ok = false;
+            status.message = errors.join("; ");
         }
         *self.status.lock() = status;
     }

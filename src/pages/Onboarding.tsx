@@ -6,6 +6,7 @@ import { LevelBars } from "../components/Visuals";
 import { api, errorText, useEvent, type ProviderId } from "../lib/api";
 import { LLM_SUGGESTIONS, STT_SUGGESTIONS } from "../lib/catalog";
 import { sameAccelerator } from "../lib/keys";
+import { trayName } from "../lib/platform";
 import { useStore } from "../lib/store";
 
 const PROVIDER_CHOICES: { id: ProviderId; title: string; text: string }[] = [
@@ -20,8 +21,12 @@ type Step = "welcome" | "provider" | "mic" | "permissions" | "try" | "done";
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const { settings, update, providers, system, refreshSystem } = useStore();
   const env = system?.environment;
-  const needsPermissions = env?.os === "linux" && (!env.uinput_access || !env.input_access);
-  const steps: Step[] = ["welcome", "provider", "mic", ...(needsPermissions ? (["permissions"] as Step[]) : []), "try", "done"];
+  const mac = env?.os === "macos";
+  // Once shown, the permissions step stays in the flow (granting must not make it vanish mid-way).
+  const permissionsStep = useRef(false);
+  if (env?.os === "linux" && (!env.uinput_access || !env.input_access)) permissionsStep.current = true;
+  if (mac && !env.accessibility) permissionsStep.current = true;
+  const steps: Step[] = ["welcome", "provider", "mic", ...(permissionsStep.current ? (["permissions"] as Step[]) : []), "try", "done"];
   const [step, setStep] = useState<Step>("welcome");
   const idx = steps.indexOf(step);
   const next = () => setStep(steps[Math.min(idx + 1, steps.length - 1)]);
@@ -63,11 +68,15 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     }
   };
 
-  // Mic step
+  // Mic step. On macOS the first test shows the permission prompt; the test restarts once access
+  // is granted so the bars come alive without leaving the step.
   const [micOn, setMicOn] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const micStatus = mac ? env?.microphone : "granted";
+  const micGranted = micStatus === "granted";
   useEffect(() => {
     if (step === "mic") {
+      setMicError(null);
       api
         .micTest(true)
         .then(() => setMicOn(true))
@@ -77,7 +86,18 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         setMicOn(false);
       };
     }
-  }, [step]);
+  }, [step, micStatus]);
+  useEffect(() => {
+    if (step !== "mic" || micGranted) return;
+    const id = window.setInterval(refreshSystem, 1000);
+    return () => window.clearInterval(id);
+  }, [step, micGranted, refreshSystem]);
+
+  useEffect(() => {
+    if (step !== "permissions" || !mac) return;
+    const id = window.setInterval(refreshSystem, 1000);
+    return () => window.clearInterval(id);
+  }, [step, mac, refreshSystem]);
 
   // Try step
   const [tried, setTried] = useState(false);
@@ -116,8 +136,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   return (
     <div className="app-frame relative flex h-full flex-col overflow-hidden rounded-[14px] border border-white/10">
       <div data-tauri-drag-region className="h-10 shrink-0" />
-      <div className="pointer-events-none absolute -left-40 -top-40 size-[520px] rounded-full bg-brand-500/20 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-40 -right-40 size-[520px] rounded-full bg-accent-500/15 blur-3xl" />
+      <div className="glow-brand pointer-events-none absolute -left-60 -top-60 size-[720px]" />
+      <div className="glow-accent pointer-events-none absolute -bottom-60 -right-60 size-[720px]" />
 
       <div className="relative flex flex-1 items-center justify-center px-10 pb-6">
         <div key={step} className="w-full max-w-xl animate-fade-in">
@@ -197,7 +217,16 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               <p className="mt-2 text-[14px] text-white/50">The bars should move when you speak.</p>
               <div className="mt-8 flex justify-center">
                 {micError ? (
-                  <div className="max-w-md text-[13px] text-rose-300">{micError}</div>
+                  <div className="max-w-md text-[13px] text-rose-300">
+                    {micError}
+                    {mac && (
+                      <div className="mt-3">
+                        <Button size="sm" variant="secondary" onClick={() => api.openPrivacySettings("microphone")}>
+                          Open System Settings
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <LevelBars event="od://mic-level" bars={40} className="h-20" active={micOn} />
                 )}
@@ -205,7 +234,48 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
-          {step === "permissions" && (
+          {step === "permissions" && mac && (
+            <div>
+              <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-white/[0.06] text-brand-300">
+                <ShieldCheck className="size-7" />
+              </div>
+              <h2 className="text-[28px] font-semibold tracking-tight text-white">Let OpenDictate type for you</h2>
+              <p className="mt-2 text-[14px] leading-relaxed text-white/55">
+                To put your words into other apps, read the text you select, and use a single key like Right ⌘ as your shortcut, macOS needs you to
+                allow OpenDictate under <b className="font-medium text-white/80">Privacy &amp; Security → Accessibility</b>. Nothing else is shared.
+              </p>
+              <div className="mt-5 space-y-2 rounded-xl border border-white/[0.07] bg-black/20 p-4 text-[13.5px]">
+                <div className="flex items-center gap-2">
+                  {env?.accessibility ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-rose-400" />}
+                  {env?.accessibility ? "Accessibility allowed" : "Accessibility not allowed yet"}
+                </div>
+                <div className="flex items-center gap-2">
+                  {env?.microphone === "granted" ? (
+                    <CheckCircle2 className="size-4 text-emerald-400" />
+                  ) : (
+                    <XCircle className={cx("size-4", env?.microphone === "undetermined" ? "text-amber-400" : "text-rose-400")} />
+                  )}
+                  {env?.microphone === "granted"
+                    ? "Microphone allowed"
+                    : env?.microphone === "undetermined"
+                      ? "Microphone: macOS asks the first time you dictate"
+                      : "Microphone access is off — turn it on in System Settings → Microphone"}
+                </div>
+              </div>
+              {!env?.accessibility && (
+                <div className="mt-5 flex gap-2">
+                  <Button variant="primary" onClick={() => api.requestPermission("accessibility").catch((e) => toast(errorText(e), "error"))}>
+                    Allow…
+                  </Button>
+                  <Button variant="secondary" onClick={() => api.openPrivacySettings("accessibility")}>
+                    Open System Settings
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === "permissions" && !mac && (
             <div>
               <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-white/[0.06] text-brand-300">
                 <ShieldCheck className="size-7" />
@@ -279,7 +349,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               </div>
               <h2 className="text-[32px] font-semibold tracking-tight text-white">You're all set</h2>
               <p className="mx-auto mt-3 max-w-md text-[14.5px] leading-relaxed text-white/55">
-                OpenDictate lives in your system tray. Close this window any time — your shortcuts keep working.
+                OpenDictate lives in your {trayName}. Close this window any time — your shortcuts keep working.
               </p>
               <Button
                 variant="primary"

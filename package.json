@@ -1,11 +1,13 @@
 {
   "name": "opendictate",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "tauri": "tauri",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "release:mac": "scripts/macos-release.sh",
+    "release": "scripts/release.sh"
   },
   "type": "module",
   "private": true,

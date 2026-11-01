@@ -12,7 +12,8 @@ Open source, private by design, and powered by the models *you* choose.
 [![Release](https://img.shields.io/github/v/release/burakgon/opendictate-desktop?style=flat-square&color=8b5cf6)](https://github.com/burakgon/opendictate-desktop/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-06b6d4?style=flat-square)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-tested-22c55e?style=flat-square&logo=linux&logoColor=white)](#install)
-[![macOS · Windows](https://img.shields.io/badge/macOS%20·%20Windows-experimental-f59e0b?style=flat-square)](#install)
+[![macOS](https://img.shields.io/badge/macOS-native-22c55e?style=flat-square&logo=apple&logoColor=white)](#macos)
+[![Windows](https://img.shields.io/badge/Windows-experimental-f59e0b?style=flat-square)](#install)
 [![CI](https://img.shields.io/github/actions/workflow/status/burakgon/opendictate-desktop/ci.yml?style=flat-square&label=CI)](https://github.com/burakgon/opendictate-desktop/actions)
 [![Stars](https://img.shields.io/github/stars/burakgon/opendictate-desktop?style=flat-square&color=f59e0b)](https://github.com/burakgon/opendictate-desktop/stargazers)
 
@@ -43,15 +44,17 @@ It works in every app — your browser, editor, terminal, chat, email — becaus
 - ✨ **Formatting you can say.** Optional smart formatting cleans up punctuation, “um”s and false starts, and follows spoken instructions in any language: “new paragraph”, “bullet milk, bullet eggs”, “make that bold”, “put this in a table”, “scratch that”.
 - 🗣️ **Command word.** Start a normal dictation with a word of your choice — *“Jarvis, make this formal”* — and it runs as a command.
 - 🔁 **Keep talking.** Start the next dictation while the previous one is still being processed; results are typed in the order you spoke.
-- 🖥️ **Terminal-aware.** Detects when a terminal has focus (Konsole, GNOME Terminal, kitty, Alacritty, Ghostty, WezTerm, …) and pastes with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> — perfect for dictating prompts to CLI tools.
+- 🖥️ **Terminal-aware.** Detects when a terminal has focus (Konsole, GNOME Terminal, kitty, Alacritty, Ghostty, WezTerm, …) and pastes with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> — perfect for dictating prompts to CLI tools. (On macOS every app, terminals included, simply gets <kbd>⌘V</kbd>.)
 - 🛟 **Never lose your words.** If a transcription fails (say, your Wi-Fi drops), the recording is kept and can be retried with one click.
 - 🎧 **Quiet please.** Optionally pause music and videos while you speak (any MPRIS player on Linux), and get told when your microphone is muted.
 - ⚙️ **Quick actions.** One-click prompts like *Fix grammar*, *Make formal* or *Translate to English* for the selected text — from the tray, the app, or the CLI.
 - 🫧 **A gorgeous, unobtrusive overlay.** A floating pill with a live waveform that never steals focus. On Wayland it's a true layer-shell surface.
 - 🔒 **Private by design.** Keys, settings and history stay on your computer. No telemetry. Temporary clipboard contents are marked so clipboard managers don't record them, and your clipboard is restored after pasting.
 - 🐧 **First-class Linux.** Wayland (KDE Plasma, GNOME, Hyprland, Sway, …) and X11. Use *any* key — even a lone **Right Ctrl**, a mouse side button, or the new **Copilot key**.
+- 🍎 **A real Mac app.** A menu bar app with a native HUD that floats over full-screen apps and never steals focus, single-key shortcuts like **Right ⌘** or **fn**, your keyboard layout respected, the clipboard restored with images and rich text intact, and the selected text read without touching the clipboard. About 20 MB of memory while it waits.
 - 📝 **History & stats.** Search everything you've dictated; see words dictated and time saved.
 - 🧩 **Scriptable.** `opendictate toggle`, `opendictate command`, `opendictate action fix` — bind them anywhere.
+- 🔄 **Updates itself.** One click installs a new version (macOS, Windows and the Linux AppImage), verified against OpenDictate's signing key.
 
 <div align="center">
 <img src="docs/overlay-states.png" alt="Overlay states: dictating, voice command, working on the selection, inserted" width="100%" />
@@ -66,7 +69,7 @@ It works in every app — your browser, editor, terminal, chat, email — becaus
 | **Double-tap** the key | Same as hold — handy for keys that can't be held, like the Copilot key. |
 | <kbd>Esc</kbd> | Cancel the current recording or request. |
 
-On Linux the default is a single key, <kbd>Right Ctrl</kbd>, for both. On macOS the defaults are <kbd>⌥ Space</kbd> (dictate) and <kbd>⌥ ⇧ Space</kbd> (command); on Windows <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>. You can pick any keys — one shared key, or separate keys for dictation and commands, each in *toggle*, *hold* or *tap-or-hold* mode.
+On Linux the default is a single key, <kbd>Right Ctrl</kbd>, for both; on macOS it is <kbd>Right ⌘</kbd>. On Windows <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>. You can pick any keys — one shared key, or separate keys for dictation and commands, each in *toggle*, *hold* or *tap-or-hold* mode.
 
 **Examples of voice commands**
 
@@ -84,17 +87,24 @@ Grab the latest build from the [**Releases page**](https://github.com/burakgon/o
 | Platform | Package |
 | --- | --- |
 | **Linux** | `.AppImage` (any distro) · `.deb` (Ubuntu, Debian, Mint, Pop!_OS) · `.rpm` (Fedora, openSUSE) · Arch: [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (`makepkg -si`) |
-| **macOS** ⚠️ experimental | `.dmg` (Apple Silicon and Intel) |
+| **macOS** 11+ | `.dmg` (Apple Silicon and Intel) — see [macOS](#macos) |
 | **Windows** ⚠️ experimental | `-setup.exe` or `.msi` |
 
-On first launch a short setup guides you through adding an API key, checking your microphone and trying your shortcut. OpenDictate then lives in your system tray.
+On first launch a short setup guides you through adding an API key, checking your microphone and trying your shortcut. OpenDictate then lives in your system tray (the menu bar on macOS).
 
 > [!WARNING]
-> **macOS and Windows are experimental and untested.** Linux is where OpenDictate is developed and tested end to end. The macOS and Windows builds compile and pass the unit tests in CI, but nobody has run them on a real machine yet. Known risks: the overlay may take keyboard focus and swallow the pasted text (turn it off in Settings → Interface if that happens), and terminal detection and media pausing are Linux-only. If you try them, please [open an issue](https://github.com/burakgon/opendictate-desktop/issues) with what worked and what didn't.
->
-> **macOS:** the app isn't signed or notarized. If macOS refuses to open it, right-click → *Open*, or run `xattr -cr /Applications/OpenDictate.app`. Then allow **Microphone** and **Accessibility** access (needed to paste into other apps).
+> **Windows is experimental and untested.** The Windows build compiles and passes the unit tests in CI, but nobody has run it on a real machine yet. Media pausing is Linux-only. If you try it, please [open an issue](https://github.com/burakgon/opendictate-desktop/issues) with what worked and what didn't.
 >
 > **Windows:** SmartScreen will warn about the unsigned installer (*More info* → *Run anyway*). Text can't be pasted into apps running as administrator.
+
+### macOS
+
+OpenDictate is a menu bar app: it has no Dock icon until you open its window, and quits from the menu bar or with <kbd>⌘Q</kbd> while its window is open.
+
+- **Permissions.** macOS asks for the **microphone** the first time you dictate, and the setup asks you to allow OpenDictate under **System Settings → Privacy & Security → Accessibility**. That one permission lets it paste into other apps, read the text you select, and watch single-key shortcuts such as Right ⌘. Without it, results are copied to the clipboard instead.
+- **Shortcuts.** <kbd>Right ⌘</kbd> by default: tap to dictate, hold (or double-tap) for a voice command. Any key works — a combination like <kbd>⌥ Space</kbd>, Right ⌥, **fn** (set *System Settings → Keyboard → “Press 🌐 key to”* to *Do Nothing*), or a mouse side button. <kbd>Esc</kbd> cancels.
+- **Automation.** Every CLI command is also a URL, for Shortcuts, Raycast, Alfred or scripts: `open opendictate://toggle`, `opendictate://command`, `opendictate://action/fix`, `opendictate://show/settings`.
+- **Unsigned builds.** The app is ad-hoc signed, not notarized. If macOS refuses to open it, right-click → *Open* (or *System Settings → Privacy & Security → Open Anyway*), or run `xattr -cr /Applications/OpenDictate.app`. Because the signature changes with every update, macOS may keep a stale Accessibility entry after updating: if pasting stops working, remove OpenDictate from the Accessibility list with **–** and allow it again.
 
 ### Linux setup
 
@@ -180,7 +190,7 @@ Then pick *Custom* in the Dictation and Commands pages and type your model names
 
 ## Command line
 
-Everything can be scripted or bound to your desktop's shortcuts. Commands are sent to the running instance (which is started if needed):
+Everything can be scripted or bound to your desktop's shortcuts. Commands are sent to the running instance (which is started if needed). On macOS use the URLs (`open opendictate://toggle`) or `/Applications/OpenDictate.app/Contents/MacOS/opendictate toggle`:
 
 ```text
 opendictate toggle            Start or stop dictation
@@ -190,7 +200,8 @@ opendictate cancel            Cancel recording / processing
 opendictate retry             Retry the last recording whose transcription failed
 opendictate action <id>       Apply a quick action to the selection (fix, formal, shorter, english, bullets, explain, …)
 opendictate show [page]       Open the window (home, dictation, commands, providers, history, settings)
-opendictate --hidden          Start in the tray
+opendictate update            Install the latest version and restart (macOS, Windows, AppImage)
+opendictate --hidden          Start in the tray (menu bar)
 ```
 
 ## Privacy
@@ -198,7 +209,7 @@ opendictate --hidden          Start in the tray
 - Audio and text are sent **only** to the provider you configure, only when you use a shortcut.
 - API keys, settings and history are stored locally (`~/.config/io.github.burakgon.OpenDictate/` and `~/.local/share/io.github.burakgon.OpenDictate/` on Linux) with owner-only permissions. History can be turned off.
 - Your clipboard is restored after pasting, and temporary clipboard contents are flagged so clipboard managers (Klipper, Windows clipboard history, macOS clipboard tools) don't keep them.
-- No analytics, no telemetry, no account. The only other request is an optional once-a-day check of GitHub's "latest release" API to tell you when an update is available (Settings → Interface).
+- No analytics, no telemetry, no account. The only other request is an optional once-a-day look at OpenDictate's latest GitHub release (Settings → Interface). An update is downloaded only when you click *Update*, and installed only if its signature matches OpenDictate's signing key.
 
 ## FAQ
 
@@ -254,14 +265,15 @@ src-tauri/src/
   engine.rs          state machine: hotkeys → record → transcribe → think → insert
   audio.rs           capture, resampling, silence detection, WAV, UI sounds
   providers.rs       speech-to-text and chat clients for OpenAI-compatible APIs
-  hotkeys/           evdev, XDG portal and native global-shortcut backends
-  output.rs          clipboard, selection capture and key injection (uinput / enigo)
-  overlay.rs         the floating pill (wlr-layer-shell on Wayland)
+  hotkeys/           evdev, XDG portal, native global-shortcut and macOS event-tap backends
+  output.rs          clipboard, selection capture and key injection (uinput / enigo / CoreGraphics)
+  overlay.rs         the floating pill (wlr-layer-shell on Wayland, a native HUD on macOS)
+  macos/             AppKit HUD, pasteboard, key events, permissions and sounds for macOS
 ```
 
 ## Contributing
 
-Issues and pull requests are welcome! Especially valuable: testing on macOS, Windows, GNOME and Hyprland, new provider presets, translations of the UI, and offline speech recognition. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome! Especially valuable: testing on Windows, GNOME and Hyprland, new provider presets, translations of the UI, and offline speech recognition. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Acknowledgements
 

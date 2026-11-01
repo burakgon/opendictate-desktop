@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { StatusDot, ToastProvider, cx } from "./components/ui";
 import { api, useEvent, type Status } from "./lib/api";
+import { isMac } from "./lib/platform";
 import { StoreProvider, useStore } from "./lib/store";
 import { Commands } from "./pages/Commands";
 import { Dictation } from "./pages/Dictation";
@@ -50,7 +51,9 @@ function Shell() {
     <div className="app-frame flex h-full overflow-hidden rounded-[14px] border border-white/10">
       {/* Sidebar */}
       <aside className="flex w-[232px] shrink-0 flex-col border-r border-white/[0.06] bg-black/20">
-        <div data-tauri-drag-region className="flex h-[72px] items-center gap-3 px-5">
+        {/* Room for the macOS traffic lights. */}
+        {isMac && <div data-tauri-drag-region className="h-9 shrink-0" />}
+        <div data-tauri-drag-region className={cx("flex items-center gap-3 px-5", isMac ? "h-[60px]" : "h-[72px]")}>
           <img src="/logo.svg" alt="" className="pointer-events-none size-9" />
           <div className="pointer-events-none">
             <div className="text-[15.5px] font-semibold tracking-tight text-white">OpenDictate</div>
@@ -91,7 +94,11 @@ function Shell() {
             )}
           </div>
           <div className="mt-1 truncate text-[11.5px] text-white/35">
-            {saveError ? <span className="text-rose-300">{saveError}</span> : `v${system?.version ?? ""} · ${system?.hotkeys.backend ?? ""} hotkeys`}
+            {saveError ? (
+              <span className="text-rose-300">{saveError}</span>
+            ) : (
+              `v${system?.version ?? ""} · ${system?.hotkeys.backend === "native" && isMac ? "macOS" : (system?.hotkeys.backend ?? "")} shortcuts`
+            )}
           </div>
         </div>
       </aside>

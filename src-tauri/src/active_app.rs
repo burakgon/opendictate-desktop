@@ -5,6 +5,8 @@
 //! * Hyprland: `hyprctl activewindow -j`. Sway: `swaymsg -t get_tree`.
 //! * X11: `xprop` on `_NET_ACTIVE_WINDOW`.
 //! * GNOME on Wayland exposes no API for this; we fall back to "unknown".
+//! * macOS: the frontmost application (only recorded in the history: every Mac app, terminals
+//!   included, pastes with ⌘V).
 
 #[cfg(target_os = "linux")]
 mod linux {
@@ -165,13 +167,17 @@ mod linux {
     }
 }
 
-/// The focused application's id/class (lower-cased), if it can be determined.
+/// The focused application: its id/class (lower-cased) on Linux, its name on macOS.
 pub async fn active_app() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         linux::active_app().await.map(|a| a.to_lowercase())
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::system::frontmost_app()
+    }
+    #[cfg(target_os = "windows")]
     {
         None
     }

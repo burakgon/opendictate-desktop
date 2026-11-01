@@ -12,7 +12,7 @@ import {
   Volume2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GithubMark } from "../components/Brand";
 import { HotkeyRecorder } from "../components/HotkeyRecorder";
 import { Button, PageHeader, Row, Section, Segmented, Select, Slider, StatusDot, Toggle, cx, useToast } from "../components/ui";
@@ -26,7 +26,8 @@ import {
   type OverlayPosition,
   type PasteShortcut,
 } from "../lib/api";
-import { isCopilotKey, isModifier, sameAccelerator, splitAccelerator } from "../lib/keys";
+import { isCopilotKey, isModifier, sameAccelerator, splitAccelerator, usesFnKey } from "../lib/keys";
+import { trayName } from "../lib/platform";
 
 const isModifierOnly = (accel: string) => {
   const parts = splitAccelerator(accel);
@@ -41,10 +42,32 @@ const MODES: { value: HotkeyMode; label: string; title: string }[] = [
 ];
 
 function MicTest() {
-  const { settings } = useStore();
+  const { settings, system, refreshSystem } = useStore();
   const [on, setOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const micStatus = system?.environment.microphone;
   useEffect(() => () => void api.micTest(false).catch(() => {}), []);
+  const start = async () => {
+    setError(null);
+    try {
+      await api.micTest(true, settings.audio.input_device);
+      setOn(true);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  // macOS: the first test shows the permission prompt; carry on once it is answered.
+  const waiting = !on && !!error && micStatus === "undetermined";
+  useEffect(() => {
+    if (!waiting) return;
+    const id = window.setInterval(refreshSystem, 1000);
+    return () => window.clearInterval(id);
+  }, [waiting, refreshSystem]);
+  const prev = useRef(micStatus);
+  useEffect(() => {
+    if (prev.current === "undetermined" && micStatus === "granted" && error) start();
+    prev.current = micStatus;
+  }, [micStatus]);
   return (
     <div className="flex items-center gap-3">
       {on && <LevelBars event="od://mic-level" bars={22} className="h-8" />}
@@ -53,13 +76,10 @@ function MicTest() {
         size="sm"
         variant={on ? "subtle" : "secondary"}
         onClick={async () => {
+          if (!on) return start();
           setError(null);
-          try {
-            await api.micTest(!on, settings.audio.input_device);
-            setOn(!on);
-          } catch (e) {
-            setError(errorText(e));
-          }
+          await api.micTest(false).catch(() => {});
+          setOn(false);
         }}
       >
         {on ? "Stop test" : "Test"}
@@ -80,11 +100,85 @@ function Check({ ok, label, hint }: { ok: boolean; label: string; hint?: string 
   );
 }
 
+/** macOS privacy permissions, with live status and one-click fixes. */
+function MacPermissions() {
+  const { system } = useStore();
+  const env = system?.environment;
+  const toast = useToast();
+  if (!env) return null;
+  const mic = env.microphone;
+  const ask = (kind: "accessibility" | "microphone") => api.requestPermission(kind).catch((e) => toast(errorText(e), "error"));
+  const open = (pane: "accessibility" | "microphone") => api.openPrivacySettings(pane).catch((e) => toast(errorText(e), "error"));
+  return (
+    <Section
+      icon={<ShieldCheck className="size-4.5" />}
+      title="macOS permissions"
+      description="OpenDictate asks macOS for two things. Changes here take effect immediately."
+    >
+      <Row
+        label={
+          <span className="flex items-center gap-2">
+            {env.accessibility ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-rose-400" />}
+            Accessibility
+          </span>
+        }
+        description={
+          env.accessibility
+            ? "Pasting into apps, reading the selected text and single-key shortcuts like Right ⌘ are ready."
+            : "Needed to paste into other apps, read the selected text and use single keys like Right ⌘ as shortcuts. Until then, text is copied to the clipboard."
+        }
+      >
+        {!env.accessibility && (
+          <Button size="sm" variant="primary" onClick={() => ask("accessibility")}>
+            Allow…
+          </Button>
+        )}
+        <Button size="sm" variant="secondary" onClick={() => open("accessibility")}>
+          Open Settings
+        </Button>
+      </Row>
+      <Row
+        label={
+          <span className="flex items-center gap-2">
+            {mic === "granted" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-rose-400" />}
+            Microphone
+          </span>
+        }
+        description={
+          mic === "granted"
+            ? "OpenDictate can hear you while you dictate (and only then)."
+            : mic === "undetermined"
+              ? "macOS will ask the first time you dictate — or allow it now."
+              : "Microphone access is off for OpenDictate. Turn it on in System Settings."
+        }
+      >
+        {mic === "undetermined" && (
+          <Button size="sm" variant="primary" onClick={() => ask("microphone")}>
+            Allow…
+          </Button>
+        )}
+        {mic !== "undetermined" && (
+          <Button size="sm" variant="secondary" onClick={() => open("microphone")}>
+            Open Settings
+          </Button>
+        )}
+      </Row>
+      {!env.accessibility && (
+        <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-[12.5px] text-white/50">
+          Already switched on but still not working? After an update macOS may keep an outdated entry: select OpenDictate in the list, remove it
+          with <b>–</b>, then click <b>Allow…</b> again.
+        </div>
+      )}
+    </Section>
+  );
+}
+
 export function SettingsPage() {
   const { settings, update, system, refreshSystem } = useStore();
   const [devices, setDevices] = useState<{ id: string; label: string }[]>([]);
   const [autostart, setAutostart] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const toast = useToast();
   const env = system?.environment;
   const os = env?.os;
@@ -119,8 +213,19 @@ export function SettingsPage() {
         ]
       : [
           { value: "auto", label: "On", title: "Native global shortcuts" },
-          { value: "disabled", label: "Off", title: "Use the tray only" },
+          { value: "disabled", label: "Off", title: `Use the ${trayName} only` },
         ];
+  const mouseAllowed = os === "linux" || os === "macos";
+  const backendName =
+    system?.hotkeys.backend === "evdev"
+      ? "Direct keyboard access"
+      : system?.hotkeys.backend === "portal"
+        ? "Desktop portal"
+        : system?.hotkeys.backend === "native"
+          ? os === "macos"
+            ? "macOS shortcuts"
+            : "Native"
+          : system?.hotkeys.backend;
 
   return (
     <div>
@@ -139,7 +244,7 @@ export function SettingsPage() {
           {!shared && (
             <Segmented<HotkeyMode> size="sm" value={hk.dictate_mode} onChange={(v) => update((s) => void (s.hotkeys.dictate_mode = v))} options={MODES} />
           )}
-          <HotkeyRecorder value={hk.dictate} os={os} allowMouse={os === "linux"} onChange={(v) => update((s) => void (s.hotkeys.dictate = v))} />
+          <HotkeyRecorder value={hk.dictate} os={os} allowMouse={mouseAllowed} onChange={(v) => update((s) => void (s.hotkeys.dictate = v))} />
         </Row>
         <Row
           label="Voice command"
@@ -154,7 +259,7 @@ export function SettingsPage() {
           {!shared && (
             <Segmented<HotkeyMode> size="sm" value={hk.command_mode} onChange={(v) => update((s) => void (s.hotkeys.command_mode = v))} options={MODES} />
           )}
-          <HotkeyRecorder value={hk.command} os={os} allowMouse={os === "linux"} onChange={(v) => update((s) => void (s.hotkeys.command = v))} />
+          <HotkeyRecorder value={hk.command} os={os} allowMouse={mouseAllowed} onChange={(v) => update((s) => void (s.hotkeys.command = v))} />
         </Row>
         <Row label="Hold threshold" description="How long a press counts as “hold” rather than “tap”.">
           <Slider value={hk.hold_threshold_ms} min={200} max={800} step={25} onChange={(v) => update((s) => void (s.hotkeys.hold_threshold_ms = v))} />
@@ -169,7 +274,7 @@ export function SettingsPage() {
             <span className="flex items-center gap-2">
               <StatusDot ok={!!system?.hotkeys.ok} />
               <span>
-                {system?.hotkeys.backend === "evdev" ? "Direct keyboard access" : system?.hotkeys.backend === "portal" ? "Desktop portal" : system?.hotkeys.backend}
+                {backendName}
                 {" — "}
                 {system?.hotkeys.message}
                 {system?.hotkeys.portal_triggers?.length
@@ -195,16 +300,33 @@ export function SettingsPage() {
             choose a combination such as Ctrl+Alt+Space.
           </div>
         )}
+        {os === "macos" && usesFnKey(hk.dictate + "+" + hk.command) && (
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-[12.5px] text-amber-100/85">
+            macOS also reacts to the fn (🌐) key. Set <b>System Settings → Keyboard → “Press 🌐 key to”</b> to <b>Do Nothing</b> so it only
+            dictates.
+          </div>
+        )}
         <div className="mt-4 flex items-start gap-3 rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-[12.5px] text-white/50">
           <Terminal className="mt-0.5 size-4 shrink-0 text-white/40" />
-          <div>
-            You can also bind these commands in your desktop's shortcut settings:{" "}
-            <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate toggle</code>{" "}
-            <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate command</code>{" "}
-            <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate cancel</code>
-          </div>
+          {os === "macos" ? (
+            <div>
+              Automate it from Shortcuts, Raycast, Alfred or a script with these links:{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate://toggle</code>{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate://command</code>{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate://action/fix</code>
+            </div>
+          ) : (
+            <div>
+              You can also bind these commands in your desktop's shortcut settings:{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate toggle</code>{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate command</code>{" "}
+              <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-white/75">opendictate cancel</code>
+            </div>
+          )}
         </div>
       </Section>
+
+      {os === "macos" && <MacPermissions />}
 
       {os === "linux" && system && (
         <Section
@@ -292,7 +414,9 @@ export function SettingsPage() {
             settings.output.method === "paste"
               ? "Placing it on the clipboard and pressing the paste shortcut. Fast and works with every language."
               : settings.output.method === "type"
-                ? "Typing it key by key (macOS/Windows; falls back to pasting on Linux)."
+                ? os === "linux"
+                  ? "Typing it key by key (falls back to pasting on Linux)."
+                  : "Typing it key by key. Leaves the clipboard alone, but is slower for long text."
                 : "Only copying it — you paste it yourself."
           }
         >
@@ -307,26 +431,40 @@ export function SettingsPage() {
             ]}
           />
         </Row>
-        <Row
-          label="Paste shortcut"
-          description={
-            settings.output.paste_shortcut === "auto"
-              ? "Auto uses Ctrl+V, and Ctrl+Shift+V (and Ctrl+Shift+C to read selections) when a terminal has focus."
-              : "Terminals usually want Ctrl+Shift+V. Shift+Insert works almost everywhere on Linux."
-          }
-        >
-          <Segmented<PasteShortcut>
-            size="sm"
-            value={settings.output.paste_shortcut}
-            onChange={(v) => update((s) => void (s.output.paste_shortcut = v))}
-            options={[
-              { value: "auto", label: "Auto" },
-              { value: "ctrl_v", label: os === "macos" ? "⌘V" : "Ctrl+V" },
-              { value: "ctrl_shift_v", label: os === "macos" ? "⌘⇧V" : "Ctrl+Shift+V" },
-              { value: "shift_insert", label: "Shift+Insert" },
-            ]}
-          />
-        </Row>
+        {os === "macos" ? (
+          <Row label="Paste shortcut" description="⌘V works in every Mac app, terminals included. ⇧⌘V pastes without formatting in some apps.">
+            <Segmented<PasteShortcut>
+              size="sm"
+              value={settings.output.paste_shortcut === "ctrl_shift_v" ? "ctrl_shift_v" : "auto"}
+              onChange={(v) => update((s) => void (s.output.paste_shortcut = v))}
+              options={[
+                { value: "auto", label: "⌘V" },
+                { value: "ctrl_shift_v", label: "⇧⌘V" },
+              ]}
+            />
+          </Row>
+        ) : (
+          <Row
+            label="Paste shortcut"
+            description={
+              settings.output.paste_shortcut === "auto"
+                ? "Auto uses Ctrl+V, and Ctrl+Shift+V (and Ctrl+Shift+C to read selections) when a terminal has focus."
+                : "Terminals usually want Ctrl+Shift+V. Shift+Insert works almost everywhere on Linux."
+            }
+          >
+            <Segmented<PasteShortcut>
+              size="sm"
+              value={settings.output.paste_shortcut}
+              onChange={(v) => update((s) => void (s.output.paste_shortcut = v))}
+              options={[
+                { value: "auto", label: "Auto" },
+                { value: "ctrl_v", label: "Ctrl+V" },
+                { value: "ctrl_shift_v", label: "Ctrl+Shift+V" },
+                { value: "shift_insert", label: "Shift+Insert" },
+              ]}
+            />
+          </Row>
+        )}
         <Row label="Restore clipboard" description="Put back what was on your clipboard after pasting.">
           <Toggle checked={settings.output.restore_clipboard} onChange={(v) => update((s) => void (s.output.restore_clipboard = v))} />
         </Row>
@@ -372,10 +510,28 @@ export function SettingsPage() {
             }}
           />
         </Row>
-        <Row label="Start in the tray" description="Don't open this window when OpenDictate starts.">
+        <Row label={`Start in the ${trayName}`} description="Don't open this window when OpenDictate starts.">
           <Toggle checked={settings.general.start_hidden} onChange={(v) => update((s) => void (s.general.start_hidden = v))} />
         </Row>
-        <Row label="Check for updates" description="Once a day, ask GitHub whether a newer version exists. Nothing is installed automatically.">
+        <Row label="Check for updates" description="Once a day, ask GitHub whether a newer version exists. You decide when to install it.">
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={checking}
+            onClick={async () => {
+              setChecking(true);
+              try {
+                const found = await api.checkForUpdates();
+                toast(found ? `OpenDictate ${found.version} is available — see Home to install it.` : `You're on the latest version (${system?.version ?? ""}).`, "success");
+              } catch (e) {
+                toast(errorText(e), "error");
+              } finally {
+                setChecking(false);
+              }
+            }}
+          >
+            Check now
+          </Button>
           <Toggle checked={settings.general.check_updates} onChange={(v) => update((s) => void (s.general.check_updates = v))} />
         </Row>
         <Row label="Keep history" description="Stored only on this computer.">

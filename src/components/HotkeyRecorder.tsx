@@ -1,7 +1,7 @@
 import { Keyboard, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { buildAccelerator, codeToToken } from "../lib/keys";
+import { buildAccelerator, codeToToken, isModifier } from "../lib/keys";
 import { Button, Keycaps, cx } from "./ui";
 
 const MOUSE: Record<number, string> = { 1: "MouseMiddle", 3: "Mouse4", 4: "Mouse5" };
@@ -48,6 +48,11 @@ export function HotkeyRecorder({
       e.stopPropagation();
       const t = codeToToken(e.code);
       if (t) down.current.delete(t);
+      // macOS sends no key-up for keys pressed while ⌘ is held: once no modifier is down any
+      // more, nothing else can still be held either.
+      if (t && isModifier(t) && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        for (const k of [...down.current]) if (!isModifier(k)) down.current.delete(k);
+      }
       if (down.current.size === 0 && all.current.length > 0) {
         if (all.current.length === 1 && all.current[0] === "Escape") return finish(null);
         finish(buildAccelerator(all.current));
@@ -89,9 +94,25 @@ export function HotkeyRecorder({
         )}
       </div>
       {recording ? (
-        <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} onClick={() => setRecording(false)}>
-          Cancel
-        </Button>
+        <>
+          {/* macOS doesn't pass the fn (🌐) key to web content, so it can't be recorded by pressing it. */}
+          {os === "macos" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              title="Use the fn (🌐) key on its own"
+              onClick={() => {
+                setRecording(false);
+                onChange("Fn");
+              }}
+            >
+              fn 🌐
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} onClick={() => setRecording(false)}>
+            Cancel
+          </Button>
+        </>
       ) : (
         <Button size="sm" variant="secondary" icon={<Keyboard className="size-3.5" />} onClick={() => setRecording(true)}>
           Change

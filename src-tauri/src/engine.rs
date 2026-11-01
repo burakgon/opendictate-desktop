@@ -210,6 +210,9 @@ pub struct Engine {
     io_lock: tokio::sync::Mutex<()>,
     failed: Mutex<Option<FailedJob>>,
     pub update: Mutex<Option<crate::updates::UpdateInfo>>,
+    /// Escape is registered as a global shortcut while busy (macOS / Windows).
+    #[cfg(not(target_os = "linux"))]
+    escape_grabbed: std::sync::atomic::AtomicBool,
 }
 
 const FEEDBACK_DELAY_MS: u64 = 130;
@@ -242,6 +245,8 @@ impl Engine {
             io_lock: tokio::sync::Mutex::new(()),
             failed: Mutex::new(None),
             update: Mutex::new(None),
+            #[cfg(not(target_os = "linux"))]
+            escape_grabbed: std::sync::atomic::AtomicBool::new(false),
         });
         (engine, rx)
     }
@@ -292,6 +297,28 @@ impl Engine {
         self.recording_id().is_some() || !self.inflight.lock().is_empty()
     }
 
+    /// Updates everything that reflects "OpenDictate is listening or working": the tray icon,
+    /// and (macOS / Windows) grabbing Escape so it cancels instead of reaching the focused app.
+    fn set_busy_ui(&self, busy: bool) {
+        tray::set_active(&self.app, busy);
+        #[cfg(target_os = "macos")]
+        crate::macos::system::set_busy(busy);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let (escape_cancels, backend) = {
+                let s = self.settings.read();
+                (s.hotkeys.escape_cancels, s.hotkeys.backend)
+            };
+            let want = busy && escape_cancels && backend != crate::settings::HotkeyBackend::Disabled;
+            if self.escape_grabbed.swap(want, Ordering::SeqCst) != want {
+                let tx = self.tx.clone();
+                crate::hotkeys::native_backend::set_escape(&self.app, want, move || {
+                    let _ = tx.send(Input::Hotkey(HotkeyEvent::Escape));
+                });
+            }
+        }
+    }
+
     fn emit_status(&self, status: Status) {
         // While a newer recording is running, older sessions finish quietly.
         if let Some(rid) = self.recording_id() {
@@ -299,6 +326,7 @@ impl Engine {
                 return;
             }
         }
+        overlay::update(&self.app, &status);
         let _ = self.app.emit("od://status", &status);
         *self.last_status.lock() = Some(status);
     }
@@ -525,6 +553,13 @@ impl Engine {
     fn start_recording(self: &Arc<Self>, slot: Option<Slot>, mode: Mode, key_mode: HotkeyMode, delay_feedback: bool) {
         let settings = self.settings.read().clone();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        #[cfg(target_os = "macos")]
+        crate::macos::system::set_busy(true);
+        #[cfg(target_os = "macos")]
+        if let Some(problem) = crate::audio::microphone_permission_problem() {
+            self.fail(id, mode, problem);
+            return;
+        }
         if let Err(e) = self.recorder.start(&settings.audio.input_device) {
             log::error!("microphone error: {e:#}");
             self.fail(id, mode, format!("Microphone error: {e:#}"));
@@ -576,7 +611,7 @@ impl Engine {
         if settings.general.show_overlay {
             overlay::show(&self.app, settings.general.overlay_position);
         }
-        tray::set_active(&self.app, true);
+        self.set_busy_ui(true);
     }
 
     fn spawn_level_meter(self: &Arc<Self>, id: u64) {
@@ -588,7 +623,9 @@ impl Engine {
                 if !recording {
                     break;
                 }
-                let _ = engine.app.emit("od://level", engine.recorder.current_level());
+                let level = engine.recorder.current_level();
+                overlay::level(&engine.app, level);
+                let _ = engine.app.emit("od://level", level);
             }
         });
     }
@@ -621,15 +658,22 @@ impl Engine {
         if !self.busy() {
             overlay::hide(&self.app);
         }
-        tray::set_active(&self.app, self.busy());
+        self.set_busy_ui(self.busy());
     }
 
-    pub async fn check_updates(&self) {
-        if let Some(info) = crate::updates::check(&self.http).await {
+    /// Asks GitHub for a newer release; remembers and announces it. Returns what was found.
+    pub async fn check_updates(&self) -> Option<crate::updates::UpdateInfo> {
+        let found = crate::updates::check(&self.app, &self.http).await;
+        if let Some(info) = &found {
             log::info!("OpenDictate {} is available", info.version);
-            let _ = self.app.emit("od://update", &info);
-            *self.update.lock() = Some(info);
+            let _ = self.app.emit("od://update", info);
         }
+        let changed = self.update.lock().as_ref().map(|u| u.version.clone()) != found.as_ref().map(|u| u.version.clone());
+        *self.update.lock() = found.clone();
+        if changed {
+            tray::refresh_menu(&self.app, &self.settings.read());
+        }
+        found
     }
 
     fn fail(self: &Arc<Self>, id: u64, mode: Mode, message: String) {
@@ -649,7 +693,7 @@ impl Engine {
             overlay::show(&self.app, settings.general.overlay_position);
         }
         self.hide_later(id, Duration::from_millis(4500));
-        tray::set_active(&self.app, self.busy());
+        self.set_busy_ui(self.busy());
     }
 
     fn hide_later(self: &Arc<Self>, id: u64, after: Duration) {
@@ -683,7 +727,7 @@ impl Engine {
         log::info!("recording stopped (session {}, {:.1}s, {:?})", session.id, captured.duration_secs(), mode);
         if !session.feedback {
             // Released before any feedback was shown: treat as an accidental tap.
-            tray::set_active(&self.app, self.busy());
+            self.set_busy_ui(self.busy());
             return;
         }
         self.sound(Sound::Stop);
@@ -706,12 +750,12 @@ impl Engine {
         });
         inflight.insert(id, task.inner().abort_handle());
         drop(inflight);
-        tray::set_active(&self.app, true);
+        self.set_busy_ui(true);
     }
 
     fn finish(self: &Arc<Self>, id: u64, mode: Mode, result: Result<Outcome>) {
         self.inflight.lock().remove(&id);
-        tray::set_active(&self.app, self.busy());
+        self.set_busy_ui(self.busy());
         let recording = self.recording_id().is_some();
         match result {
             Ok(Outcome::Done { preview, copied_only }) => {
@@ -770,9 +814,9 @@ impl Engine {
 
     /// Resamples, trims and encodes a recording. `None` when there is no speech in it.
     fn prepare_audio(settings: &Settings, captured: Captured) -> Result<Prepared> {
-        let captured = match std::env::var("OPENDICTATE_TEST_AUDIO") {
-            Ok(path) if !path.is_empty() => audio::decode_wav(&std::fs::read(&path)?)?,
-            _ => captured,
+        let captured = match audio::test_audio() {
+            Some(path) => audio::decode_wav(&std::fs::read(&path)?)?,
+            None => captured,
         };
         let pcm = audio::resample_to_16k(&captured.samples, captured.sample_rate);
         let analysis = audio::analyse(&pcm);

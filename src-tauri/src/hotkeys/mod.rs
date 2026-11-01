@@ -2,18 +2,27 @@
 //!
 //! * Linux: `evdev` (reads keyboards directly; supports modifier-only keys and hold-to-talk)
 //!   or the XDG `GlobalShortcuts` portal (no permissions needed).
-//! * macOS / Windows: native global shortcuts.
+//! * macOS: Carbon hotkeys for key combinations, plus a Quartz event tap for single modifier
+//!   keys (Right ⌘, fn), mouse buttons and hold-to-talk on them.
+//! * Windows: native global shortcuts.
+
+use std::sync::atomic::AtomicBool;
 
 use serde::Serialize;
 use tokio::sync::mpsc::UnboundedSender;
 
 #[cfg(target_os = "linux")]
 pub mod evdev_backend;
+#[cfg(target_os = "macos")]
+pub mod macos_backend;
 pub mod manager;
 #[cfg(not(target_os = "linux"))]
 pub mod native_backend;
 #[cfg(target_os = "linux")]
 pub mod portal_backend;
+
+/// Set while the settings window records a new shortcut: backends then let every key through.
+pub static PAUSED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +48,7 @@ pub enum HotkeyEvent {
     Pressed(Slot),
     Released(Slot),
     /// Another key was pressed while a modifier-only hotkey was held (e.g. Ctrl+C).
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     Interrupted(Slot),
     Escape,
 }
@@ -59,7 +69,7 @@ impl Binding {
 
 pub const MODIFIERS: &[&str] = &[
     "Ctrl", "Shift", "Alt", "Super", "LeftCtrl", "RightCtrl", "LeftShift", "RightShift", "LeftAlt", "RightAlt",
-    "LeftSuper", "RightSuper",
+    "LeftSuper", "RightSuper", "Fn",
 ];
 
 pub fn is_modifier(t: &str) -> bool {
@@ -84,8 +94,11 @@ pub fn parse(accel: &str) -> Vec<String> {
                 "rightshift" | "rshift" | "shiftright" => "RightShift",
                 "leftalt" | "lalt" | "altleft" => "LeftAlt",
                 "rightalt" | "ralt" | "altgr" | "altright" => "RightAlt",
-                "leftsuper" | "lsuper" | "metaleft" => "LeftSuper",
-                "rightsuper" | "rsuper" | "metaright" => "RightSuper",
+                "leftsuper" | "lsuper" | "metaleft" | "leftcmd" | "leftcommand" | "lcmd" => "LeftSuper",
+                "rightsuper" | "rsuper" | "metaright" | "rightcmd" | "rightcommand" | "rcmd" => "RightSuper",
+                "leftoption" | "loption" => "LeftAlt",
+                "rightoption" | "roption" => "RightAlt",
+                "fn" | "globe" | "function" => "Fn",
                 "space" => "Space",
                 "esc" | "escape" => "Escape",
                 "enter" | "return" => "Enter",
@@ -148,6 +161,9 @@ mod tests {
         assert_eq!(parse("ctrl+alt+space"), vec!["Ctrl", "Alt", "Space"]);
         assert_eq!(parse("RightCtrl"), vec!["RightCtrl"]);
         assert_eq!(parse("Super+d"), vec!["Super", "D"]);
+        assert_eq!(parse("rightcmd"), vec!["RightSuper"]);
+        assert_eq!(parse("fn"), vec!["Fn"]);
+        assert!(Binding { slot: Slot::Shared, tokens: parse("Fn") }.modifier_only());
     }
 
     #[test]

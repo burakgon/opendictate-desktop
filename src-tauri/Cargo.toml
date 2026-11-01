@@ -1,6 +1,6 @@
 [package]
 name = "opendictate"
-version = "0.1.1"
+version = "0.2.0"
 description = "Voice dictation and voice commands for your desktop, powered by the models you choose."
 authors = ["Burak Gon"]
 license = "MIT"
@@ -16,17 +16,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 reqwest = { version = "0.13", features = ["json", "multipart"] }
 cpal = "0.15"
 hound = "3.5"
-arboard = { version = "3", features = ["wayland-data-control"] }
 base64 = "0.22"
 anyhow = "1"
 log = "0.4"
@@ -42,8 +42,37 @@ futures-util = "0.3"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-enigo = "0.6"
 tauri-plugin-global-shortcut = "2"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+enigo = "0.6"
+
+# macOS talks to AppKit, CoreGraphics and the accessibility API directly (see src/macos).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor", "CGPath"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std", "block2", "objc2-core-foundation", "NSArray", "NSData", "NSDate", "NSDictionary",
+    "NSDistributedNotificationCenter", "NSGeometry", "NSNotification", "NSObject", "NSOperation",
+    "NSProcessInfo", "NSString", "NSURL", "NSValue",
+] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = [
+    "std", "objc2-core-foundation", "objc2-core-graphics", "CAAnimation", "CALayer", "CAMediaTiming",
+    "CAMediaTimingFunction", "CAShapeLayer", "CATransaction",
+] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std", "block2", "objc2-core-foundation", "objc2-core-graphics", "objc2-quartz-core", "NSAnimation",
+    "NSAnimationContext", "NSAppearance", "NSApplication", "NSCell", "NSColor", "NSControl", "NSEvent",
+    "NSFont", "NSFontDescriptor", "NSGraphics", "NSImage", "NSImageView", "NSLayoutConstraint", "NSPanel",
+    "NSParagraphStyle", "NSPasteboard", "NSPasteboardItem", "NSResponder",
+    "NSRunningApplication", "NSScreen", "NSSound", "NSText", "NSTextField", "NSView", "NSVisualEffectView",
+    "NSWindow", "NSWorkspace",
+] }
 
 [profile.release]
 codegen-units = 1

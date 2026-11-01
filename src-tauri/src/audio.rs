@@ -72,6 +72,17 @@ impl Recorder {
         level.store(0f32.to_bits(), Ordering::Relaxed);
         let device_name = device_name.to_string();
 
+        // Testing aid: replay a WAV file instead of opening the microphone at all.
+        if let Some(path) = test_audio() {
+            let thread = thread::Builder::new()
+                .name("od-capture".into())
+                .spawn(move || replay_thread(&path, level, stop_rx, ready_tx))
+                .context("could not spawn the capture thread")?;
+            let _ = ready_rx.recv();
+            *guard = Some(Active { stop_tx, thread });
+            return Ok(());
+        }
+
         let thread = thread::Builder::new()
             .name("od-capture".into())
             .spawn(move || capture_thread(&device_name, level, stop_rx, ready_tx))
@@ -112,22 +123,42 @@ impl Recorder {
     }
 }
 
+/// `OPENDICTATE_TEST_AUDIO`: a WAV file used instead of the microphone (for testing the pipeline).
+pub fn test_audio() -> Option<String> {
+    std::env::var("OPENDICTATE_TEST_AUDIO").ok().filter(|p| !p.is_empty())
+}
+
+/// Plays back a WAV file's levels in real time, as if it were being recorded.
+fn replay_thread(path: &str, level: Arc<AtomicU32>, stop_rx: mpsc::Receiver<()>, ready_tx: mpsc::Sender<Result<()>>) -> Result<Captured> {
+    let captured = std::fs::read(path).map_err(anyhow::Error::from).and_then(|b| decode_wav(&b));
+    let _ = ready_tx.send(Ok(()));
+    let captured = captured?;
+    let window = (captured.sample_rate / 30).max(1) as usize;
+    let mut chunks = captured.samples.chunks(window);
+    while let Err(mpsc::RecvTimeoutError::Timeout) = stop_rx.recv_timeout(Duration::from_millis(33)) {
+        let rms = chunks.next().map(|c| (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).sqrt()).unwrap_or(0.0);
+        level.store(rms.to_bits(), Ordering::Relaxed);
+    }
+    Ok(captured)
+}
+
 /// Prefix for PipeWire/PulseAudio sources, recorded through the `pulse` ALSA device.
+#[cfg(target_os = "linux")]
 const PULSE_PREFIX: &str = "pulse:";
 
 fn find_input_device(name: &str) -> Result<cpal::Device> {
     let host = cpal::default_host();
-    let mut wanted = name.to_string();
     #[cfg(target_os = "linux")]
-    {
-        if let Some(source) = name.strip_prefix(PULSE_PREFIX) {
-            // libpulse picks the source from PULSE_SOURCE when the ALSA `pulse` device opens.
-            std::env::set_var("PULSE_SOURCE", source);
-            wanted = "pulse".into();
-        } else {
-            std::env::remove_var("PULSE_SOURCE");
-        }
-    }
+    let wanted = if let Some(source) = name.strip_prefix(PULSE_PREFIX) {
+        // libpulse picks the source from PULSE_SOURCE when the ALSA `pulse` device opens.
+        std::env::set_var("PULSE_SOURCE", source);
+        "pulse".to_string()
+    } else {
+        std::env::remove_var("PULSE_SOURCE");
+        name.to_string()
+    };
+    #[cfg(not(target_os = "linux"))]
+    let wanted = name.to_string();
     if !wanted.is_empty() {
         if let Ok(devices) = host.input_devices() {
             for d in devices {
@@ -440,11 +471,51 @@ fn synth(sound: Sound, rate: u32, volume: f32) -> Vec<f32> {
     out
 }
 
+/// The sound as a 16-bit WAV file at full volume (macOS plays these through NSSound).
+#[cfg(target_os = "macos")]
+pub fn sound_wav(sound: Sound) -> Result<Vec<u8>> {
+    const RATE: u32 = 44_100;
+    let samples = synth(sound, RATE, 1.0);
+    let spec = hound::WavSpec { channels: 1, sample_rate: RATE, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+    let mut cursor = Cursor::new(Vec::with_capacity(samples.len() * 2 + 44));
+    {
+        let mut w = hound::WavWriter::new(&mut cursor, spec)?;
+        for s in samples {
+            w.write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)?;
+        }
+        w.finalize()?;
+    }
+    Ok(cursor.into_inner())
+}
+
+/// macOS: why recording can't start, if the microphone permission is missing. Shows the
+/// permission prompt the first time.
+#[cfg(target_os = "macos")]
+pub fn microphone_permission_problem() -> Option<String> {
+    use crate::macos::permissions;
+    if test_audio().is_some() {
+        return None;
+    }
+    match permissions::microphone_status() {
+        "granted" => None,
+        "undetermined" => {
+            permissions::request_microphone();
+            Some("Allow OpenDictate to use the microphone, then try again.".into())
+        }
+        _ => Some("OpenDictate can't use the microphone. Allow it in System Settings → Privacy & Security → Microphone.".into()),
+    }
+}
+
 /// Plays a UI sound without blocking.
 pub fn play(sound: Sound, volume: f32) {
     if volume <= 0.0 {
         return;
     }
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::sound::play(sound, volume);
+    }
+    #[cfg(not(target_os = "macos"))]
     let _ = thread::Builder::new().name("od-sound".into()).spawn(move || {
         if let Err(e) = play_blocking(sound, volume) {
             log::debug!("could not play sound: {e:#}");
@@ -452,6 +523,7 @@ pub fn play(sound: Sound, volume: f32) {
     });
 }
 
+#[cfg(not(target_os = "macos"))]
 fn play_blocking(sound: Sound, volume: f32) -> Result<()> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or_else(|| anyhow!("no output device"))?;

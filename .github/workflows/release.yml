@@ -1,15 +1,43 @@
 name: Release
 
+# Push a tag such as v0.2.0 to release: a draft release is created with that version's section of
+# CHANGELOG.md, every platform is built and uploaded (with signed updater artifacts and
+# latest.json, which running copies of OpenDictate check for updates), and the release is
+# published once all builds have succeeded.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
+  workflow_dispatch: # run it on a tag to rebuild that release
 
 permissions:
   contents: write
 
 jobs:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          # This version's section of the changelog (without its heading).
+          awk -v v="$version" 'index($0, "## [" v "]") == 1 { f = 1; next } /^## \[/ && f { exit } f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See the [changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)." > notes.md
+          printf '\nInstallation notes: see the [README](https://github.com/%s#install). OpenDictate %s and later update themselves.\n' "${{ github.repository }}" "$version" >> notes.md
+          id=$(gh api "repos/${{ github.repository }}/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="OpenDictate $TAG" -F draft=true -F body=@notes.md --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -41,13 +69,62 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Updates are signed with the key in these secrets; without it the build has no updater files.
+      - name: Updater signing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No TAURI_SIGNING_PRIVATE_KEY secret: this release can't be installed as an update."
+          fi
+      # Signed with a Developer ID and notarized by Apple when these repository secrets exist
+      # (see "Signed macOS builds" in CONTRIBUTING.md); otherwise the app is ad-hoc signed.
+      - name: macOS signing and notarization
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::warning::No Apple signing secrets: the macOS build is ad-hoc signed and not notarized."
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE=$(printf '%s' "$APPLE_CERTIFICATE" | tr -d '[:space:]')"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+          } >> "$GITHUB_ENV"
+          if [ -n "$APPLE_API_KEY_P8" ] && [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+            printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+            {
+              echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+              echo "APPLE_API_KEY=$APPLE_API_KEY"
+              echo "APPLE_API_KEY_PATH=$key"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No App Store Connect API key secrets: the macOS build is signed but not notarized."
+          fi
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: OpenDictate ${{ github.ref_name }}
-          releaseBody: See the [README](https://github.com/burakgon/opendictate-desktop#install) for installation notes.
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }} ${{ env.UPDATER_ARGS }}
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}" -F draft=false -f make_latest=true --jq '.html_url'

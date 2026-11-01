@@ -20,6 +20,7 @@ import { ModelPicker } from "../components/ModelPicker";
 import { Button, Field, Input, Keycaps, PageHeader, Row, Section, Segmented, Slider, TextArea, Toggle } from "../components/ui";
 import { api, useDefaultPrompts, type QuickAction, type Reasoning, type SelectionMethod } from "../lib/api";
 import { sameAccelerator } from "../lib/keys";
+import { isMac, trayName } from "../lib/platform";
 import { useStore } from "../lib/store";
 
 export const ACTION_ICONS: Record<string, LucideIcon> = {
@@ -153,7 +154,7 @@ export function Commands({ navigate }: { navigate: (p: string) => void }) {
         <Section
           icon={<MousePointerClick className="size-4.5" />}
           title="Quick actions"
-          description="One-click prompts for selected text, available from the tray menu, here, or `opendictate action <id>`."
+          description={`One-click prompts for selected text, available from the ${trayName} menu, here, or ${isMac ? "opendictate://action/<id>" : "`opendictate action <id>`"}.`}
           actions={
             <Button
               size="sm"

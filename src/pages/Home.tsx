@@ -1,10 +1,10 @@
 import { AlertTriangle, ArrowRight, Clock, Gauge, MessageSquareText, Mic, RotateCcw, Sparkles, Wand2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, useEvent, type HistoryEntry, type Stats, type Status } from "../lib/api";
 import { isCopilotKey, sameAccelerator } from "../lib/keys";
 import { hasKey, useStore } from "../lib/store";
 import { Button, Keycaps, TextArea, cx } from "../components/ui";
+import { UpdateBanner } from "../components/UpdateBanner";
 import { LevelBars, StatusOrb } from "../components/Visuals";
 
 function formatDuration(secs: number) {
@@ -28,11 +28,6 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<HistoryEntry[]>([]);
   const [playground, setPlayground] = useState("");
-  const [update, setUpdate] = useState<{ version: string; url: string } | null>(null);
-  useEffect(() => {
-    api.updateInfo().then(setUpdate);
-  }, []);
-  useEvent<{ version: string; url: string }>("od://update", setUpdate);
   const os = system?.environment.os;
 
   const load = () => {
@@ -84,15 +79,7 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
           )}
         </div>
       )}
-      {update && (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-brand-400/25 bg-brand-500/[0.08] px-4 py-3">
-          <Sparkles className="size-4 shrink-0 text-brand-300" />
-          <div className="flex-1 text-[13.5px] text-white/85">OpenDictate {update.version} is available.</div>
-          <Button size="sm" variant="secondary" onClick={() => openUrl(update.url)}>
-            What's new
-          </Button>
-        </div>
-      )}
+      <UpdateBanner />
       {issues.length > 0 && (
         <div className="mb-5 space-y-2">
           {issues.map((i) => (
@@ -109,8 +96,8 @@ export function Home({ status, navigate }: { status: Status | null; navigate: (p
 
       {/* Hero */}
       <section className="card relative mb-5 overflow-hidden p-8">
-        <div className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full bg-brand-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-40 size-72 rounded-full bg-accent-500/10 blur-3xl" />
+        <div className="glow-brand pointer-events-none absolute -right-36 -top-36 size-[26rem]" />
+        <div className="glow-accent pointer-events-none absolute -bottom-44 left-28 size-[24rem] opacity-70" />
         <div className="relative flex items-center gap-8">
           <div className="-m-6 shrink-0">
             <StatusOrb status={status} size={96} />

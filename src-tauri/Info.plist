@@ -4,7 +4,26 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>OpenDictate listens while you hold or toggle your dictation shortcut, and turns your speech into text.</string>
+  <!-- A menu bar app: the Dock icon appears only while the OpenDictate window is open. -->
   <key>LSUIElement</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <key>NSSupportsAutomaticTermination</key>
   <false/>
+  <key>NSSupportsSuddenTermination</key>
+  <false/>
+  <!-- opendictate://toggle, opendictate://command, opendictate://action/fix, opendictate://show/settings -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>io.github.burakgon.OpenDictate</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>opendictate</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>

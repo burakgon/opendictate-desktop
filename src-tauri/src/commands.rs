@@ -29,6 +29,7 @@ pub struct AppState {
     pub hotkey_tx: EventTx,
     pub mic_test: Arc<Recorder>,
     pub mic_test_on: Arc<AtomicBool>,
+    pub mic_test_lock: tokio::sync::Mutex<()>,
 }
 
 type R<T> = Result<T, String>;
@@ -230,23 +231,46 @@ pub fn play_sound(engine: State<'_, Arc<Engine>>, name: String) {
     audio::play(s, vol);
 }
 
-/// Starts/stops a microphone level test (emits `od://mic-level`).
+/// Starts/stops a microphone level test (emits `od://mic-level`). Async, and serialised, so that
+/// opening a slow device (or one waiting for a permission prompt) never freezes the window and a
+/// stop can't overtake the start before it.
 #[tauri::command]
-pub fn mic_test(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_, AppState>, start: bool, device: Option<String>) -> R<()> {
+pub async fn mic_test(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_, AppState>, start: bool, device: Option<String>) -> R<()> {
+    let _turn = state.mic_test_lock.lock().await;
+    let rec = state.mic_test.clone();
+    let on = state.mic_test_on.clone();
     if !start {
-        state.mic_test_on.store(false, Ordering::Relaxed);
-        state.mic_test.cancel();
+        on.store(false, Ordering::Relaxed);
+        tauri::async_runtime::spawn_blocking(move || rec.cancel()).await.map_err(err)?;
         return Ok(());
     }
     if engine.recorder().is_recording() {
         return Err("The microphone is busy with a dictation".into());
     }
+    #[cfg(target_os = "macos")]
+    if crate::audio::test_audio().is_none() {
+        match crate::macos::permissions::microphone_status() {
+            "granted" => {}
+            "undetermined" => {
+                // Don't open the device while macOS asks: it would only deliver silence.
+                crate::macos::permissions::request_microphone();
+                return Err("Allow OpenDictate to use the microphone in the dialog.".into());
+            }
+            _ => return Err("Microphone access is off for OpenDictate. Allow it in System Settings → Privacy & Security → Microphone.".into()),
+        }
+    }
     let device = device.unwrap_or_else(|| engine.settings.read().audio.input_device.clone());
-    state.mic_test.cancel();
-    state.mic_test.start(&device).map_err(|e| format!("{e:#}"))?;
-    state.mic_test_on.store(true, Ordering::Relaxed);
-    let rec = state.mic_test.clone();
-    let on = state.mic_test_on.clone();
+    {
+        let rec = rec.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            rec.cancel();
+            rec.start(&device)
+        })
+        .await
+        .map_err(err)?
+        .map_err(|e| format!("{e:#}"))?;
+    }
+    on.store(true, Ordering::Relaxed);
     tauri::async_runtime::spawn(async move {
         let mut ticks = 0;
         while on.load(Ordering::Relaxed) && ticks < 30 * 60 {
@@ -254,8 +278,10 @@ pub fn mic_test(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_,
             let _ = app.emit("od://mic-level", rec.current_level());
             ticks += 1;
         }
-        rec.cancel();
-        on.store(false, Ordering::Relaxed);
+        if on.swap(false, Ordering::Relaxed) {
+            // Timed out (not stopped by the UI).
+            tauri::async_runtime::spawn_blocking(move || rec.cancel());
+        }
     });
     Ok(())
 }
@@ -281,8 +307,32 @@ pub fn show_window(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn pause_hotkeys(engine: State<'_, Arc<Engine>>, paused: bool) {
+pub fn pause_hotkeys(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_, AppState>, paused: bool) {
     engine.paused.store(paused, Ordering::Relaxed);
+    crate::hotkeys::PAUSED.store(paused, Ordering::Relaxed);
+    // System hotkeys would swallow the very keys the user is about to record.
+    #[cfg(not(target_os = "linux"))]
+    {
+        if paused {
+            crate::hotkeys::native_backend::unregister_all(&app);
+        } else {
+            apply_settings(&app, &engine, &state);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    let _ = (app, state);
+}
+
+/// macOS: shows the system prompt for `accessibility` or `microphone` access.
+#[tauri::command]
+pub fn request_permission(kind: String) -> R<()> {
+    platform::request_permission(&kind).map_err(|e| format!("{e:#}"))
+}
+
+/// macOS: opens System Settings → Privacy & Security at `accessibility`, `microphone`, ...
+#[tauri::command]
+pub fn open_privacy_settings(pane: String) -> R<()> {
+    platform::open_privacy_settings(&pane).map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -293,4 +343,16 @@ pub fn open_shortcut_settings() -> R<()> {
 #[tauri::command]
 pub fn update_info(engine: State<'_, Arc<Engine>>) -> Option<crate::updates::UpdateInfo> {
     engine.update.lock().clone()
+}
+
+/// Checks GitHub for a newer release right now.
+#[tauri::command]
+pub async fn check_for_updates(engine: State<'_, Arc<Engine>>) -> R<Option<crate::updates::UpdateInfo>> {
+    Ok(engine.check_updates().await)
+}
+
+/// Downloads, verifies and installs the latest release, then restarts.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> R<()> {
+    crate::updates::install(app).await.map_err(|e| format!("{e:#}"))
 }

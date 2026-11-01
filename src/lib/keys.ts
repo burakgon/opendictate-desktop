@@ -11,6 +11,7 @@ const CODE_TO_TOKEN: Record<string, string> = {
   MetaRight: "RightSuper",
   OSLeft: "LeftSuper",
   OSRight: "RightSuper",
+  Fn: "Fn",
   Space: "Space",
   Enter: "Enter",
   Tab: "Tab",
@@ -77,7 +78,7 @@ const GENERIC: Record<string, string> = {
 const ORDER = ["Ctrl", "Alt", "Shift", "Super", ...SIDED];
 
 export function isModifier(token: string): boolean {
-  return SIDED.includes(token) || ["Ctrl", "Alt", "Shift", "Super"].includes(token);
+  return SIDED.includes(token) || ["Ctrl", "Alt", "Shift", "Super", "Fn"].includes(token);
 }
 
 /** Turns the set of keys pressed during recording into an accelerator string. */
@@ -114,12 +115,35 @@ const PRETTY: Record<string, string> = {
   Right: "→",
 };
 
+const MAC: Record<string, string> = {
+  Super: "⌘",
+  Alt: "⌥",
+  Ctrl: "⌃",
+  Shift: "⇧",
+  LeftSuper: "Left ⌘",
+  RightSuper: "Right ⌘",
+  LeftAlt: "Left ⌥",
+  RightAlt: "Right ⌥",
+  LeftCtrl: "Left ⌃",
+  RightCtrl: "Right ⌃",
+  LeftShift: "Left ⇧",
+  RightShift: "Right ⇧",
+  Fn: "fn",
+  Enter: "↩",
+  Backspace: "⌫",
+  Delete: "⌦",
+  Escape: "esc",
+  Tab: "⇥",
+};
+
 export function prettyToken(token: string, os?: string): string {
-  if (os === "macos") {
-    const mac: Record<string, string> = { Super: "⌘", Alt: "⌥", Ctrl: "⌃", Shift: "⇧" };
-    if (mac[token]) return mac[token];
-  }
+  if (os === "macos" && MAC[token]) return MAC[token];
   return PRETTY[token] ?? token;
+}
+
+/** Whether the shortcut includes the fn (🌐) key, which macOS also uses for its own actions. */
+export function usesFnKey(accel: string): boolean {
+  return splitAccelerator(accel).includes("Fn");
 }
 
 export function splitAccelerator(accel: string): string[] {
