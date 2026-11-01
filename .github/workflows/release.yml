@@ -145,6 +145,27 @@ jobs:
           # latest.json is written once, after every build (publish-release): builds merging their
           # own entries into it can drop each other's when they finish at the same time.
           includeUpdaterJson: false
+      # tauri-action notarizes the app inside the disk image, but only signs the disk image: notarize
+      # that too, or opening the downloaded .dmg may warn.
+      - name: Notarize the disk image
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_IDENTITY != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -n "${APPLE_API_KEY_PATH:-}" ]; then
+            auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+          elif [ -n "${APPLE_ID:-}" ]; then
+            auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          else
+            exit 0 # no notarization credentials (already warned above)
+          fi
+          for dmg in src-tauri/target/*/release/bundle/dmg/*.dmg; do
+            xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m | tee "$RUNNER_TEMP/notary.log"
+            grep -q "status: Accepted" "$RUNNER_TEMP/notary.log" || { echo "::error::Apple did not notarize $(basename "$dmg")"; exit 1; }
+            xcrun stapler staple "$dmg"
+            gh release upload "$TAG" "$dmg" --clobber
+          done
 
   publish-release:
     needs: [create-release, build]
