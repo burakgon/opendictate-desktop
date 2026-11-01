@@ -4,6 +4,9 @@ All notable changes to OpenDictate are documented here.
 
 ## [0.2.1] - 2026-11-01
 
+### Changed
+- Claude Haiku 5.5 (`anthropic/claude-haiku-5.5` on OpenRouter) is the default model for smart formatting and voice commands, and the first suggestion in the model pickers. Models you already chose are kept.
+
 ### Fixed
 - Links in the app window did nothing: *Get a key* on the provider pages and in the setup, *What's new* on the update banner and the GitHub button.
 - Drop-down lists such as the model and language pickers were partly hidden behind the next section of the page, which also caught the clicks meant for them.

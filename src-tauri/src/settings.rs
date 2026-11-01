@@ -107,7 +107,7 @@ impl Default for DictationSettings {
             language: "auto".into(),
             vocabulary: String::new(),
             polish: false,
-            polish_model: ModelRef::new("openrouter", "openai/gpt-6-luna"),
+            polish_model: ModelRef::new("openrouter", "anthropic/claude-haiku-5.5"),
             polish_prompt: String::new(),
             replacements: vec![],
             trailing_space: true,
@@ -165,7 +165,7 @@ impl Default for CommandSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            llm: ModelRef::new("openrouter", "openai/gpt-6-luna"),
+            llm: ModelRef::new("openrouter", "anthropic/claude-haiku-5.5"),
             reasoning: crate::providers::Reasoning::Off,
             trigger_word: String::new(),
             selection_method: SelectionMethod::Copy,

@@ -157,10 +157,10 @@ You only need **one** key. [OpenRouter](https://openrouter.ai/keys) is the easie
 | Dictation (default) | `openai/gpt-transcribe` | ~1 s | ≈ $0.30 per hour of speech |
 | Cheapest dictation | `openai/whisper-large-v3-turbo` | ~1–1.5 s | ≈ $0.01 per hour of speech |
 | Fastest dictation (English & European languages) | `nvidia/parakeet-tdt-0.6b-v3` | ~0.6 s | very low |
-| Commands & formatting (default) | `openai/gpt-6-luna`, thinking off | ~1 s | fractions of a cent |
-| Alternatives | `anthropic/claude-haiku-5.5` · `google/gemini-3.5-flash-lite` | ~1 s | fractions of a cent |
+| Commands & formatting (default) | `anthropic/claude-haiku-5.5`, thinking off | ~1 s | fractions of a cent |
+| Alternatives | `openai/gpt-6-luna` · `google/gemini-3.5-flash-lite` | ~1 s | fractions of a cent |
 
-All IDs are OpenRouter's; with a direct OpenAI key use `gpt-transcribe` and `gpt-6-luna`. Multilingual tip: `gpt-transcribe`, `gpt-4o-mini-transcribe`, Voxtral and MAI-Transcribe 2 handle languages like Turkish perfectly, while Parakeet is best kept for English and major European languages.
+All IDs are OpenRouter's; with a direct OpenAI key use `gpt-transcribe` and `gpt-6-luna`, with an Anthropic key `claude-haiku-5-5`. Multilingual tip: `gpt-transcribe`, `gpt-4o-mini-transcribe`, Voxtral and MAI-Transcribe 2 handle languages like Turkish perfectly, while Parakeet is best kept for English and major European languages.
 
 The model pickers list everything your provider offers, with recommended picks on top — or type any model ID.
 

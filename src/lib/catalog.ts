@@ -37,8 +37,8 @@ export const STT_SUGGESTIONS: Partial<Record<ProviderId, Suggestion[]>> = {
 
 export const LLM_SUGGESTIONS: Partial<Record<ProviderId, Suggestion[]>> = {
   openrouter: [
-    { id: "openai/gpt-6-luna", label: "GPT-6 Luna", tags: ["fast", "cheap"] },
     { id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", tags: ["fast", "smart"] },
+    { id: "openai/gpt-6-luna", label: "GPT-6 Luna", tags: ["fast", "cheap"] },
     { id: "google/gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite", tags: ["fastest", "cheap"] },
     { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash", tags: ["smart"] },
     { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", tags: ["cheap"] },
