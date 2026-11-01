@@ -46,12 +46,14 @@ longer be updated automatically.
 ## Signed macOS builds
 
 `npm run release:mac` (`scripts/macos-release.sh`) builds a universal OpenDictate.app (Apple Silicon + Intel) and a DMG
-into `src-tauri/target/release/macos-release/`, signs them with the first **Developer ID Application** identity in your
-keychain (or `APPLE_SIGNING_IDENTITY`), and notarizes and staples both when it finds credentials. Without a Developer ID it
+into `src-tauri/target/release/macos-release/`, signs them with the **Developer ID Application** identity in your keychain
+that stays valid longest (or `APPLE_SIGNING_IDENTITY`), and notarizes and staples both when it finds credentials. Without a Developer ID it
 falls back to ad-hoc signing. It refuses certificates that Apple has revoked: macOS blocks apps signed with them.
 
-1. **Certificate.** Xcode → Settings → Accounts → your team → *Manage Certificates* → **+** → *Developer ID Application*
-   (only the Account Holder, or an Admin they allowed, can create one).
+1. **Certificate.** developer.apple.com → *Certificates* → **+** → *Developer ID Application* → **G2 Sub-CA**, with a
+   certificate signing request from Keychain Access (*Certificate Assistant → Request a Certificate From a Certificate
+   Authority*), or let `scripts/macos-renew-certificate.sh` make the request and pick up the result. Xcode's *Manage Certificates* works too, but may issue it from Apple's previous
+   intermediate, which expires on 1 February 2027. Only the Account Holder, or an Admin they allowed, can create one.
 2. **Notarization credentials**, one of:
    - an app-specific password stored once: `xcrun notarytool store-credentials opendictate --apple-id <apple id> --team-id <team id>`,
      then `NOTARY_PROFILE=opendictate npm run release:mac`;
@@ -65,7 +67,9 @@ Accessibility and microphone permissions across updates.
 ad-hoc signed). `scripts/macos-signing-secrets.sh DeveloperID.p12` sets them: export the identity from Keychain Access
 (*My Certificates* → right-click → *Export…*), run the script, and it checks the certificate with Apple, asks for an
 Apple ID and app-specific password for notarization (or takes `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`)
-and verifies them before storing anything (`--check` stops there).
+and verifies them before storing anything (`--check` stops there; `--certificate-only` replaces just the certificate, e.g. a
+renewed one, and keeps the notarization secrets). It also saves them as the notarytool profile `opendictate`,
+so `NOTARY_PROFILE=opendictate npm run release:mac` notarizes local builds too.
 
 | Secret | Value |
 | --- | --- |
@@ -75,6 +79,11 @@ and verifies them before storing anything (`--check` stops there).
 | `APPLE_API_KEY`, `APPLE_API_ISSUER` | App Store Connect API key ID and issuer ID (for notarization) |
 | `APPLE_API_KEY_P8` | the contents of the `AuthKey_<key id>.p8` file |
 | or `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | an Apple ID with an app-specific password, instead of an API key |
+
+**Renewing the certificate.** Apple issues Developer ID certificates for about a year. The release workflow warns a month
+before it expires (and stops with an explanation once it has). Then run `scripts/macos-renew-certificate.sh` on a Mac signed in
+to GitHub: it creates the signing request, opens the Apple page and waits for the certificate you download there, adds it to
+the keychain and replaces the certificate secrets. Notarization secrets stay as they are.
 
 ## Guidelines
 

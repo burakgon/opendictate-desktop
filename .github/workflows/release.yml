@@ -99,8 +99,20 @@ jobs:
             echo "::warning::No Apple signing secrets: the macOS build is ad-hoc signed and not notarized."
             exit 0
           fi
+          cert=$(printf '%s' "$APPLE_CERTIFICATE" | tr -d '[:space:]')
+          # Say so plainly when the certificate is about to expire (a month ahead) or has expired.
+          renew="renew it by running scripts/macos-renew-certificate.sh on a Mac"
+          leaf=$(printf '%s' "$cert" | base64 --decode | /usr/bin/openssl pkcs12 -nokeys -clcerts -passin env:APPLE_CERTIFICATE_PASSWORD 2>/dev/null || true)
+          if [ -n "$leaf" ]; then
+            if ! printf '%s\n' "$leaf" | openssl x509 -noout -checkend 0 >/dev/null; then
+              echo "::error::The Developer ID certificate in APPLE_CERTIFICATE has expired: $renew."
+              exit 1
+            elif ! printf '%s\n' "$leaf" | openssl x509 -noout -checkend 2592000 >/dev/null; then
+              echo "::warning::The Developer ID certificate expires on $(printf '%s\n' "$leaf" | openssl x509 -noout -enddate | cut -d= -f2): $renew."
+            fi
+          fi
           {
-            echo "APPLE_CERTIFICATE=$(printf '%s' "$APPLE_CERTIFICATE" | tr -d '[:space:]')"
+            echo "APPLE_CERTIFICATE=$cert"
             echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
             echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
           } >> "$GITHUB_ENV"

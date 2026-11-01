@@ -104,7 +104,7 @@ OpenDictate is a menu bar app: it has no Dock icon until you open its window, an
 - **Permissions.** macOS asks for the **microphone** the first time you dictate, and the setup asks you to allow OpenDictate under **System Settings → Privacy & Security → Accessibility**. That one permission lets it paste into other apps, read the text you select, and watch single-key shortcuts such as Right ⌘. Without it, results are copied to the clipboard instead.
 - **Shortcuts.** <kbd>Right ⌘</kbd> by default: tap to dictate, hold (or double-tap) for a voice command. Any key works — a combination like <kbd>⌥ Space</kbd>, Right ⌥, **fn** (set *System Settings → Keyboard → “Press 🌐 key to”* to *Do Nothing*), or a mouse side button. <kbd>Esc</kbd> cancels.
 - **Automation.** Every CLI command is also a URL, for Shortcuts, Raycast, Alfred or scripts: `open opendictate://toggle`, `opendictate://command`, `opendictate://action/fix`, `opendictate://show/settings`.
-- **Unsigned builds.** The app is ad-hoc signed, not notarized. If macOS refuses to open it, right-click → *Open* (or *System Settings → Privacy & Security → Open Anyway*), or run `xattr -cr /Applications/OpenDictate.app`. Because the signature changes with every update, macOS may keep a stale Accessibility entry after updating: if pasting stops working, remove OpenDictate from the Accessibility list with **–** and allow it again.
+- **Signed and notarized.** OpenDictate is signed with a Developer ID and notarized by Apple, so it opens like any other app and macOS keeps its permissions when it updates. Versions up to 0.2.1 were not signed: after updating from one of them, allow OpenDictate under Accessibility once more (if it is still listed, remove it with **–** first).
 
 ### Linux setup
 

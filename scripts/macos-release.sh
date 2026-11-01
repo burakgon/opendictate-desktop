@@ -2,9 +2,9 @@
 # Builds OpenDictate for macOS, signed - and notarized when credentials are available - as a
 # universal app (Apple Silicon + Intel) plus a DMG.
 #
-# Signing identity: $APPLE_SIGNING_IDENTITY, else the first "Developer ID Application" identity in
-# the keychain, else ad-hoc ("-"). The certificate is checked with Apple first: macOS blocks (and
-# may move to the Trash) apps signed with a revoked certificate.
+# Signing identity: $APPLE_SIGNING_IDENTITY, else the "Developer ID Application" identity in the
+# keychain that stays valid longest, else ad-hoc ("-"). The certificate is checked with Apple
+# first: macOS blocks (and may move to the Trash) apps signed with a revoked certificate.
 #
 # Notarization (requires a Developer ID identity), the first of:
 #   NOTARY_PROFILE=<name>                            saved with `xcrun notarytool store-credentials`
@@ -33,7 +33,27 @@ identities=$(security find-identity -v -p codesigning 2>/dev/null || true)
 # certificate is revoked or otherwise unusable.
 matching() { grep -F "\"$1" <<<"$identities" || true; }
 usable() { grep -v '" (CSSMERR' || true; }
-as_hash_name() { head -1 | sed -E 's/^ *[0-9]+\) ([0-9A-F]{40}) "([^"]*)".*$/\1 \2/'; }
+# The PEM of the keychain certificate with the given SHA-1 hash.
+pem_for_hash() {
+  security find-certificate -a -Z -p 2>/dev/null | awk -v h="$1" '
+    /^SHA-1 hash:/ { keep = ($3 == h) }
+    /BEGIN CERTIFICATE/ { inpem = 1 }
+    keep && inpem { print }
+    /END CERTIFICATE/ { inpem = 0; if (keep) exit }'
+}
+# `<SHA-1> <name>` of the identity that stays valid longest: a renewed certificate shares its
+# name with the one it replaces.
+as_hash_name() {
+  local line hash end best="" best_end=0
+  while IFS= read -r line; do
+    [[ "$line" =~ ^\ *[0-9]+\)\ ([0-9A-F]{40})\ \"([^\"]*)\" ]] || continue
+    hash=${BASH_REMATCH[1]}
+    end=$(pem_for_hash "$hash" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+    end=$(date -j -f "%b %e %T %Y %Z" "$end" +%s 2>/dev/null || echo 1)
+    if ((end > best_end)); then best_end=$end; best="$hash ${BASH_REMATCH[2]}"; fi
+  done
+  printf '%s' "$best"
+}
 if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
   [[ -n "$(matching "$APPLE_SIGNING_IDENTITY")" ]] || die "no signing identity named '$APPLE_SIGNING_IDENTITY' in the keychain"
   chosen=$(matching "$APPLE_SIGNING_IDENTITY" | usable | as_hash_name)
@@ -48,15 +68,6 @@ if [[ -n "$chosen" ]]; then
 fi
 DEVELOPER_ID=false
 [[ "$IDENTITY" == "Developer ID Application:"* ]] && DEVELOPER_ID=true
-
-# The PEM of the keychain certificate with the given SHA-1 hash.
-pem_for_hash() {
-  security find-certificate -a -Z -p 2>/dev/null | awk -v h="$1" '
-    /^SHA-1 hash:/ { keep = ($3 == h) }
-    /BEGIN CERTIFICATE/ { inpem = 1 }
-    keep && inpem { print }
-    /END CERTIFICATE/ { inpem = 0; if (keep) exit }'
-}
 
 if [[ "$IDENTITY" == "-" ]]; then
   warn "no Developer ID Application identity: ad-hoc signing (other Macs will say the developer can't be verified)"

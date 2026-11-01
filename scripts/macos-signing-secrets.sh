@@ -2,11 +2,13 @@
 # Stores the macOS signing and notarization credentials as GitHub repository secrets, so the
 # release workflow signs releases with a Developer ID and has them notarized by Apple.
 #
-# Usage: scripts/macos-signing-secrets.sh [--check] <DeveloperID.p12>
+# Usage: scripts/macos-signing-secrets.sh [--check] [--certificate-only] <DeveloperID.p12>
 #
-#   <DeveloperID.p12>  a "Developer ID Application" certificate and its private key, exported from
-#                      Keychain Access (My Certificates → right-click → Export…) with a password.
-#   --check            validate everything, but don't change any secret.
+#   <DeveloperID.p12>   a "Developer ID Application" certificate and its private key, exported from
+#                       Keychain Access (My Certificates → right-click → Export…) with a password.
+#   --check             validate everything, but don't change any secret.
+#   --certificate-only  replace just the certificate (e.g. a renewed one) and keep the notarization
+#                       secrets that are already set.
 #
 # Notarization credentials, the first of:
 #   APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH   an App Store Connect API key (.p8)
@@ -21,9 +23,17 @@ warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 
 CHECK=false
-[[ "${1:-}" == "--check" ]] && { CHECK=true; shift; }
+CERT_ONLY=false
+while [[ "${1:-}" == --* ]]; do
+  case "$1" in
+    --check) CHECK=true ;;
+    --certificate-only) CERT_ONLY=true ;;
+    *) die "unknown option $1" ;;
+  esac
+  shift
+done
 P12=${1:-}
-[[ -f "$P12" ]] || die "usage: scripts/macos-signing-secrets.sh [--check] <DeveloperID.p12>"
+[[ -f "$P12" ]] || die "usage: scripts/macos-signing-secrets.sh [--check] [--certificate-only] <DeveloperID.p12>"
 [[ "$(uname)" == Darwin ]] || die "this script runs on macOS"
 command -v gh >/dev/null || die "the GitHub CLI (gh) is required"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner) || die "gh can't see this repository (gh auth login)"
@@ -59,13 +69,21 @@ elif ! grep -qi "successful" <<<"$verdict"; then
   warn "could not confirm the certificate with Apple (${verdict##*: })"
 fi
 say "certificate: $IDENTITY, valid until $(openssl x509 -in "$TMP/cert.pem" -noout -enddate | cut -d= -f2)"
+if ! openssl x509 -in "$TMP/cert.pem" -noout -issuer | grep -q "OU *= *G2"; then
+  # The previous Developer ID intermediate expires on 2027-02-01, and so does everything it issued.
+  warn "this certificate comes from Apple's previous Developer ID intermediate, which expires on 1 February 2027; scripts/macos-renew-certificate.sh gets one from the G2 intermediate"
+fi
 
 # --- notarization ---------------------------------------------------------------------------
 SECRETS=(APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID)
 APPLE_CERTIFICATE=$(base64 -i "$P12" | tr -d '\n')
 APPLE_CERTIFICATE_PASSWORD=$P12_PASSWORD
 APPLE_SIGNING_IDENTITY=$IDENTITY
-if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_PATH:-}" ]]; then
+APPLE_TEAM_ID=$TEAM_ID
+NOTARY=()
+if $CERT_ONLY; then
+  say "keeping the notarization secrets that are already set"
+elif [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_PATH:-}" ]]; then
   [[ -f "$APPLE_API_KEY_PATH" ]] || die "no file at APPLE_API_KEY_PATH"
   APPLE_API_KEY_P8=$(cat "$APPLE_API_KEY_PATH")
   NOTARY=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
@@ -77,7 +95,6 @@ else
   if [[ -n "$APPLE_ID" && -z "${APPLE_PASSWORD:-}" ]]; then
     read -rsp "App-specific password for $APPLE_ID: " APPLE_PASSWORD && echo
   fi
-  NOTARY=()
   if [[ -n "$APPLE_ID" ]]; then
     NOTARY=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$TEAM_ID")
     SECRETS+=(APPLE_ID APPLE_PASSWORD)
@@ -87,7 +104,7 @@ if ((${#NOTARY[@]})); then
   xcrun notarytool history "${NOTARY[@]}" >/dev/null 2>"$TMP/notary.err" ||
     die "Apple rejected the notarization credentials: $(tail -1 "$TMP/notary.err")"
   say "notarization credentials work"
-else
+elif ! $CERT_ONLY; then
   warn "no notarization credentials: releases will be signed but not notarized (Gatekeeper still warns)"
 fi
 
@@ -97,8 +114,19 @@ if $CHECK; then
   exit 0
 fi
 for name in "${SECRETS[@]}"; do
+  value=${!name} # outside the pipeline, so a missing value stops the script
+  [[ -n "$value" ]] || die "no value for $name"
   # Through stdin, so no secret shows up in the process list.
-  printf '%s' "${!name}" | gh secret set "$name" --repo "$REPO" >/dev/null
+  printf '%s' "$value" | gh secret set "$name" --repo "$REPO" >/dev/null
   echo "  set $name"
 done
-say "done: the next release (npm run release -- <version>) is signed${NOTARY:+ and notarized}"
+if ((${#NOTARY[@]})); then
+  # The same credentials for local builds: NOTARY_PROFILE=opendictate npm run release:mac
+  xcrun notarytool store-credentials opendictate "${NOTARY[@]}" >/dev/null &&
+    echo "  saved the notarytool profile 'opendictate' in your keychain (NOTARY_PROFILE=opendictate npm run release:mac)"
+fi
+if $CERT_ONLY; then
+  say "done: releases are now signed with $IDENTITY"
+else
+  say "done: the next release (npm run release -- <version>) is signed${NOTARY:+ and notarized}"
+fi

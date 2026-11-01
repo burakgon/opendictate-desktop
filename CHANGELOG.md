@@ -2,6 +2,11 @@
 
 All notable changes to OpenDictate are documented here.
 
+## [0.2.2] - 2026-11-01
+
+### macOS
+- Signed with a Developer ID and notarized by Apple: OpenDictate opens without the "unidentified developer" warning, and macOS now keeps its Accessibility and microphone permissions across updates. Coming from 0.2.1 or earlier (unsigned), allow OpenDictate under *Accessibility* once more after this update.
+
 ## [0.2.1] - 2026-11-01
 
 ### Changed
