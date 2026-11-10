@@ -88,6 +88,8 @@ export interface Settings {
   general: {
     show_overlay: boolean;
     overlay_position: OverlayPosition;
+    /** The tray icon (macOS: the menu bar icon). */
+    show_tray_icon: boolean;
     history_enabled: boolean;
     history_limit: number;
     start_hidden: boolean;
@@ -220,6 +222,8 @@ export const api = {
   micTest: (start: boolean, device?: string) => invoke<void>("mic_test", { start, device }),
   fixPermissions: (inputGroup: boolean) => invoke<string>("fix_permissions", { inputGroup }),
   pauseHotkeys: (paused: boolean) => invoke<void>("pause_hotkeys", { paused }),
+  /** Quits OpenDictate (closing its window only hides it). */
+  quit: () => invoke<void>("quit"),
   openShortcutSettings: () => invoke<void>("open_shortcut_settings"),
   updateInfo: () => invoke<UpdateInfo | null>("update_info"),
   checkForUpdates: () => invoke<UpdateInfo | null>("check_for_updates"),

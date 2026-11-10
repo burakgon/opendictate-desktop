@@ -310,6 +310,9 @@ pub enum OverlayPosition {
 pub struct GeneralSettings {
     pub show_overlay: bool,
     pub overlay_position: OverlayPosition,
+    /// The tray icon (macOS: the menu bar icon). Without it, opening OpenDictate again brings
+    /// its window back.
+    pub show_tray_icon: bool,
     pub history_enabled: bool,
     pub history_limit: usize,
     pub start_hidden: bool,
@@ -323,6 +326,7 @@ impl Default for GeneralSettings {
         Self {
             show_overlay: true,
             overlay_position: OverlayPosition::Bottom,
+            show_tray_icon: true,
             history_enabled: true,
             history_limit: 1000,
             start_hidden: false,
@@ -471,5 +475,16 @@ mod tests {
         assert!(s.dictation.polish_prompt.is_empty());
         assert_eq!(s.polish_prompt(), DEFAULT_POLISH_PROMPT);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn tray_icon_is_shown_unless_turned_off() {
+        // Settings saved before the option existed keep the icon.
+        let old: Settings = serde_json::from_str(r#"{"version": 2, "general": {"start_hidden": true}}"#).unwrap();
+        assert!(old.general.show_tray_icon);
+        let hidden: Settings = serde_json::from_str(r#"{"version": 2, "general": {"show_tray_icon": false}}"#).unwrap();
+        assert!(!hidden.general.show_tray_icon);
+        // Resetting the settings brings it back.
+        assert!(Settings::default().general.show_tray_icon);
     }
 }

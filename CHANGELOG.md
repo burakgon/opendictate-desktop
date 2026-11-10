@@ -2,6 +2,11 @@
 
 All notable changes to OpenDictate are documented here.
 
+## [0.2.3] - 2026-11-10
+
+### Added
+- The menu bar icon (the system tray icon on Linux and Windows) is optional: turn it off under *Settings → Interface*. OpenDictate keeps running and your shortcuts keep working; opening OpenDictate again — from Spotlight, Finder or your app launcher — brings its window back. On Linux and Windows, where the tray menu was the only way to quit, Settings shows a *Quit* button while the icon is hidden.
+
 ## [0.2.2] - 2026-11-01
 
 ### macOS

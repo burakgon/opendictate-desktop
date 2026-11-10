@@ -154,7 +154,7 @@ export function Commands({ navigate }: { navigate: (p: string) => void }) {
         <Section
           icon={<MousePointerClick className="size-4.5" />}
           title="Quick actions"
-          description={`One-click prompts for selected text, available from the ${trayName} menu, here, or ${isMac ? "opendictate://action/<id>" : "`opendictate action <id>`"}.`}
+          description={`One-click prompts for selected text, available ${settings.general.show_tray_icon ? `from the ${trayName} menu, here, or` : "here or with"} ${isMac ? "opendictate://action/<id>" : "`opendictate action <id>`"}.`}
           actions={
             <Button
               size="sm"

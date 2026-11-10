@@ -90,7 +90,7 @@ Grab the latest build from the [**Releases page**](https://github.com/burakgon/o
 | **macOS** 11+ | `.dmg` (Apple Silicon and Intel) — see [macOS](#macos) |
 | **Windows** ⚠️ experimental | `-setup.exe` or `.msi` |
 
-On first launch a short setup guides you through adding an API key, checking your microphone and trying your shortcut. OpenDictate then lives in your system tray (the menu bar on macOS).
+On first launch a short setup guides you through adding an API key, checking your microphone and trying your shortcut. OpenDictate then lives in your system tray (the menu bar on macOS). The icon is optional: turn it off under *Settings → Interface*, and start OpenDictate again whenever you want its window back.
 
 > [!WARNING]
 > **Windows is experimental and untested.** The Windows build compiles and passes the unit tests in CI, but nobody has run it on a real machine yet. Media pausing is Linux-only. If you try it, please [open an issue](https://github.com/burakgon/opendictate-desktop/issues) with what worked and what didn't.
@@ -201,7 +201,7 @@ opendictate retry             Retry the last recording whose transcription faile
 opendictate action <id>       Apply a quick action to the selection (fix, formal, shorter, english, bullets, explain, …)
 opendictate show [page]       Open the window (home, dictation, commands, providers, history, settings)
 opendictate update            Install the latest version and restart (macOS, Windows, AppImage)
-opendictate --hidden          Start in the tray (menu bar)
+opendictate --hidden          Start in the background, without opening the window
 ```
 
 ## Privacy

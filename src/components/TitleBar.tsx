@@ -1,8 +1,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useStore } from "../lib/store";
 
 export function TitleBar({ os }: { os?: string }) {
+  const { settings } = useStore();
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     const w = getCurrentWindow();
@@ -41,7 +43,7 @@ export function TitleBar({ os }: { os?: string }) {
           <button
             className="flex size-8 items-center justify-center rounded-lg text-white/45 transition hover:bg-rose-500/80 hover:text-white"
             onClick={() => w.close()}
-            title="Close to tray"
+            title={settings.general.show_tray_icon ? "Close to tray" : "Close (OpenDictate keeps running)"}
           >
             <X className="size-4" />
           </button>

@@ -598,7 +598,8 @@ impl Hud {
         let hint = error && status.retryable;
         self.detail.setHidden(!hint);
         if hint {
-            self.detail.setStringValue(&NSString::from_str("Your recording was kept — retry it from the menu bar."));
+            let from = if crate::tray::shown() { "the menu bar" } else { "the OpenDictate window" };
+            self.detail.setStringValue(&NSString::from_str(&format!("Your recording was kept — retry it from {from}.")));
         }
 
         // Tail: a badge and/or the timer.

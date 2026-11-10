@@ -50,7 +50,7 @@ Commands (sent to the running instance; it is started if needed):
 On macOS the same commands are available as URLs, e.g. `open opendictate://toggle`.
 
 Options:
-  --hidden             Start in the tray without opening the window
+  --hidden             Start in the background without opening the window
   -h, --help           Show this help
   -V, --version        Show the version
 ";
@@ -160,7 +160,7 @@ pub fn run() {
 
         let current = settings.read().clone();
         overlay::create(&handle, current.general.overlay_position)?;
-        tray::create(&handle, &current)?;
+        tray::sync(&handle, &current)?;
 
         app.manage(AppState {
             settings_path,
@@ -198,8 +198,10 @@ pub fn run() {
         Ok(())
     });
 
-    // Menu events (tray menu and the macOS app menu) are handled by the tray's global listener.
     let app = builder
+        // The tray menu and the macOS app menu. Registered here rather than on the tray icon,
+        // which is optional: the app menu has to work without it.
+        .on_menu_event(|app, event| tray::on_menu(app, event.id.as_ref()))
         .on_window_event(|window, event| {
             if window.label() == tray::MAIN_WINDOW {
                 if let WindowEvent::CloseRequested { api, .. } = event {
@@ -235,6 +237,7 @@ pub fn run() {
             commands::mic_test,
             commands::fix_permissions,
             commands::show_window,
+            commands::quit,
             commands::pause_hotkeys,
             commands::open_shortcut_settings,
             commands::update_info,

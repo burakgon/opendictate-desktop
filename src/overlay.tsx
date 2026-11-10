@@ -1,7 +1,7 @@
 import { AlertCircle, Check, Wand2 } from "lucide-react";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api, useEvent, type Status } from "./lib/api";
+import { api, useEvent, type Settings, type Status } from "./lib/api";
 import "./styles.css";
 
 const BARS = 26;
@@ -55,6 +55,10 @@ function Overlay() {
   const [visible, setVisible] = useState(false);
   const startedAt = useRef(Date.now());
   const lastSession = useRef(0);
+  // A failed recording is retried from the tray menu, unless its icon is hidden.
+  const [trayIcon, setTrayIcon] = useState(true);
+  useEffect(() => void api.getSettings().then((s) => setTrayIcon(s.general.show_tray_icon)), []);
+  useEvent<Settings>("od://settings", (s) => setTrayIcon(s.general.show_tray_icon));
 
   const apply = (s: Status) => {
     if (s.phase === "recording" && s.session !== lastSession.current) {
@@ -135,7 +139,7 @@ function Overlay() {
       body = (
         <div className="min-w-0">
           <div className="line-clamp-2 text-[12.5px] leading-snug text-rose-100/90">{status.message}</div>
-          {status.retryable && <div className="mt-0.5 text-[11px] text-white/45">Your recording was kept — retry from the tray menu.</div>}
+          {status.retryable && <div className="mt-0.5 text-[11px] text-white/45">Your recording was kept — retry from the {trayIcon ? "tray menu" : "OpenDictate window"}.</div>}
         </div>
       );
       break;

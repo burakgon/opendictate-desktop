@@ -1,5 +1,7 @@
 //! System tray (macOS: menu bar) icon and menu, the main window, and the macOS app menu.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[cfg(not(target_os = "macos"))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{
@@ -16,6 +18,19 @@ use crate::{
 
 const TRAY_ID: &str = "main";
 pub const MAIN_WINDOW: &str = "main";
+
+/// Whether the tray icon is shown (it is optional, see [`sync`]).
+static SHOWN: AtomicBool = AtomicBool::new(false);
+/// Whether OpenDictate is listening or working, so an icon that is built later starts out right.
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+
+fn tooltip(active: bool) -> &'static str {
+    if active {
+        "OpenDictate - listening"
+    } else {
+        "OpenDictate"
+    }
+}
 
 #[cfg(not(target_os = "macos"))]
 fn icon(active: bool) -> Option<Image<'static>> {
@@ -274,12 +289,36 @@ pub fn main_window_closed(app: &AppHandle) {
     let _ = app;
 }
 
-pub fn create(app: &AppHandle, settings: &Settings) -> tauri::Result<()> {
+/// Shows or hides the tray icon as `general.show_tray_icon` asks.
+///
+/// The icon is built the first time it is wanted, so a hidden one never flashes up at launch.
+/// From then on it is only hidden, and its menu and state stay current for when it returns.
+pub fn sync(app: &AppHandle, settings: &Settings) -> tauri::Result<()> {
+    let show = settings.general.show_tray_icon;
+    if SHOWN.load(Ordering::Relaxed) == show {
+        return Ok(());
+    }
+    match app.tray_by_id(TRAY_ID) {
+        Some(tray) => tray.set_visible(show)?,
+        None if show => create(app, settings)?,
+        None => {}
+    }
+    SHOWN.store(show, Ordering::Relaxed);
+    log::info!("tray icon: {}", if show { "shown" } else { "hidden" });
+    Ok(())
+}
+
+/// Whether the tray icon, and with it the tray menu, is there to point the user to.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn shown() -> bool {
+    SHOWN.load(Ordering::Relaxed)
+}
+
+/// Builds the tray icon. Its menu items are handled by [`on_menu`], like those of the app menu.
+fn create(app: &AppHandle, settings: &Settings) -> tauri::Result<()> {
     let menu = build_menu(app, settings)?;
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("OpenDictate")
-        .menu(&menu)
-        .on_menu_event(|app, event| on_menu(app, event.id.as_ref()));
+    let active = ACTIVE.load(Ordering::Relaxed);
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID).tooltip(tooltip(active)).menu(&menu);
     // macOS convention: clicking a menu bar item opens its menu. Elsewhere a click opens the window.
     #[cfg(target_os = "macos")]
     {
@@ -293,7 +332,7 @@ pub fn create(app: &AppHandle, settings: &Settings) -> tauri::Result<()> {
             }
         });
     }
-    if let Some(i) = icon(false) {
+    if let Some(i) = icon(active) {
         builder = builder.icon(i);
     } else if let Some(i) = app.default_window_icon() {
         builder = builder.icon(i.clone());
@@ -309,6 +348,7 @@ pub fn refresh_menu(app: &AppHandle, settings: &Settings) {
 }
 
 pub fn set_active(app: &AppHandle, active: bool) {
+    ACTIVE.store(active, Ordering::Relaxed);
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(tray) = app2.tray_by_id(TRAY_ID) {
@@ -316,7 +356,7 @@ pub fn set_active(app: &AppHandle, active: bool) {
             // Setting the icon resets the template flag.
             #[cfg(target_os = "macos")]
             let _ = tray.set_icon_as_template(true);
-            let _ = tray.set_tooltip(Some(if active { "OpenDictate - listening" } else { "OpenDictate" }));
+            let _ = tray.set_tooltip(Some(tooltip(active)));
         }
     });
 }

@@ -27,7 +27,7 @@ import {
   type PasteShortcut,
 } from "../lib/api";
 import { isCopilotKey, isModifier, sameAccelerator, splitAccelerator, usesFnKey } from "../lib/keys";
-import { trayName } from "../lib/platform";
+import { isMac, trayName } from "../lib/platform";
 
 const isModifierOnly = (accel: string) => {
   const parts = splitAccelerator(accel);
@@ -184,6 +184,7 @@ export function SettingsPage() {
   const os = env?.os;
   const hk = settings.hotkeys;
   const shared = settings.command.enabled && sameAccelerator(hk.dictate, hk.command);
+  const trayIcon = settings.general.show_tray_icon;
 
   useEffect(() => {
     api.inputDevices().then(setDevices);
@@ -209,11 +210,11 @@ export function SettingsPage() {
           { value: "auto", label: "Auto", title: "Direct keyboard access when available, otherwise the desktop portal" },
           { value: "evdev", label: "Direct", title: "Read keyboards directly (input group). Supports single modifier keys." },
           { value: "portal", label: "Desktop portal", title: "Ask the desktop (KDE/GNOME/Hyprland) to register shortcuts" },
-          { value: "disabled", label: "Off", title: "Use the tray or CLI only" },
+          { value: "disabled", label: "Off", title: trayIcon ? "Use the tray or CLI only" : "Use the CLI only" },
         ]
       : [
           { value: "auto", label: "On", title: "Native global shortcuts" },
-          { value: "disabled", label: "Off", title: `Use the ${trayName} only` },
+          { value: "disabled", label: "Off", title: `Use ${trayIcon ? `the ${trayName}` : isMac ? "opendictate:// links" : "the CLI"} only` },
         ];
   const mouseAllowed = os === "linux" || os === "macos";
   const backendName =
@@ -475,7 +476,7 @@ export function SettingsPage() {
           label="Show overlay"
           description={
             env && !env.overlay_available
-              ? "Your desktop can't keep a floating pill above other windows without stealing focus (GNOME on Wayland), so OpenDictate uses sounds and the tray icon instead."
+              ? `Your desktop can't keep a floating pill above other windows without stealing focus (GNOME on Wayland), so OpenDictate uses sounds${trayIcon ? " and the tray icon" : ""} instead.`
               : "A small pill with a live waveform while listening."
           }
         >
@@ -496,6 +497,28 @@ export function SettingsPage() {
             ]}
           />
         </Row>
+        <Row
+          label={`Show ${trayName} icon`}
+          description={
+            isMac
+              ? "Without it, open OpenDictate from Spotlight or Finder to get back to this window."
+              : "Without it, start OpenDictate again to get back to this window."
+          }
+        >
+          <Toggle checked={trayIcon} onChange={(v) => update((s) => void (s.general.show_tray_icon = v))} />
+        </Row>
+        {!isMac && !trayIcon && (
+          <Row label="Quit OpenDictate" description="Closing this window leaves it running in the background.">
+            <Button
+              size="sm"
+              variant="secondary"
+              // Save first: a change made a moment ago may still be waiting to be saved.
+              onClick={() => api.saveSettings(settings).then(() => api.quit()).catch((e) => toast(errorText(e), "error"))}
+            >
+              Quit
+            </Button>
+          </Row>
+        )}
         <Row label="Launch at login">
           <Toggle
             checked={autostart}
@@ -510,7 +533,7 @@ export function SettingsPage() {
             }}
           />
         </Row>
-        <Row label={`Start in the ${trayName}`} description="Don't open this window when OpenDictate starts.">
+        <Row label={trayIcon ? `Start in the ${trayName}` : "Start in the background"} description="Don't open this window when OpenDictate starts.">
           <Toggle checked={settings.general.start_hidden} onChange={(v) => update((s) => void (s.general.start_hidden = v))} />
         </Row>
         <Row label="Check for updates" description="Once a day, ask GitHub whether a newer version exists. You decide when to install it.">

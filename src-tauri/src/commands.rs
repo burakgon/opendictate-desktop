@@ -51,6 +51,14 @@ pub fn apply_settings(app: &AppHandle, engine: &Engine, state: &AppState) {
     tray::refresh_menu(app, &settings);
 }
 
+/// Shows or hides the tray icon if `general.show_tray_icon` says otherwise than it is now.
+/// Called where that setting changes, which is always on the main thread.
+fn sync_tray_icon(app: &AppHandle, settings: &Settings) {
+    if let Err(e) = tray::sync(app, settings) {
+        log::error!("could not {} the tray icon: {e}", if settings.general.show_tray_icon { "show" } else { "hide" });
+    }
+}
+
 #[tauri::command]
 pub fn save_settings(app: AppHandle, engine: State<'_, Arc<Engine>>, state: State<'_, AppState>, settings: Settings) -> R<()> {
     let old = engine.settings.read().clone();
@@ -68,6 +76,7 @@ pub fn save_settings(app: AppHandle, engine: State<'_, Arc<Engine>>, state: Stat
     if menu_changed {
         tray::refresh_menu(&app, &settings);
     }
+    sync_tray_icon(&app, &settings);
     let _ = app.emit("od://settings", &settings);
     Ok(())
 }
@@ -80,6 +89,7 @@ pub fn reset_settings(app: AppHandle, engine: State<'_, Arc<Engine>>, state: Sta
     fresh.save(&state.settings_path).map_err(err)?;
     *engine.settings.write() = fresh.clone();
     apply_settings(&app, &engine, &state);
+    sync_tray_icon(&app, &fresh);
     let _ = app.emit("od://settings", &fresh);
     Ok(fresh)
 }
@@ -304,6 +314,12 @@ pub async fn fix_permissions(app: AppHandle, input_group: bool) -> R<String> {
 #[tauri::command]
 pub fn show_window(app: AppHandle) {
     tray::show_main(&app, None);
+}
+
+/// Quits OpenDictate: without the tray icon there is no menu to do it from.
+#[tauri::command]
+pub fn quit(app: AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
