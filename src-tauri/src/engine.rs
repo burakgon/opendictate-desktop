@@ -661,9 +661,10 @@ impl Engine {
         self.set_busy_ui(self.busy());
     }
 
-    /// Asks GitHub for a newer release; remembers and announces it. Returns what was found.
-    pub async fn check_updates(&self) -> Option<crate::updates::UpdateInfo> {
-        let found = crate::updates::check(&self.app, &self.http).await;
+    /// Asks GitHub for a newer release; remembers and announces it. Returns what was found, or
+    /// why GitHub could not be asked - what was known before is kept then.
+    pub async fn check_updates(&self) -> Result<Option<crate::updates::UpdateInfo>> {
+        let found = crate::updates::check(&self.app, &self.http).await?;
         if let Some(info) = &found {
             log::info!("OpenDictate {} is available", info.version);
             let _ = self.app.emit("od://update", info);
@@ -676,7 +677,7 @@ impl Engine {
             let settings = self.settings.read().clone();
             tray::refresh_menu(&self.app, &settings);
         }
-        found
+        Ok(found)
     }
 
     fn fail(self: &Arc<Self>, id: u64, mode: Mode, message: String) {

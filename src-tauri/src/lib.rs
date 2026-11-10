@@ -193,7 +193,9 @@ pub fn run() {
                 tokio::time::sleep(std::time::Duration::from_secs(20)).await;
                 loop {
                     if engine.settings.read().general.check_updates {
-                        let _ = engine.check_updates().await;
+                        if let Err(e) = engine.check_updates().await {
+                            log::info!("{e}");
+                        }
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
                 }

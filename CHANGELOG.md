@@ -2,6 +2,11 @@
 
 All notable changes to OpenDictate are documented here.
 
+## [0.2.4] - 2026-11-10
+
+### Fixed
+- A check that could not reach GitHub no longer claims "You're on the latest version": it says that GitHub could not be reached. A newer version that was already found stays on offer.
+
 ## [0.2.3] - 2026-11-10
 
 ### Added

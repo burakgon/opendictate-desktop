@@ -57,20 +57,21 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
     matches!((parse(candidate), parse(current)), (Some(a), Some(b)) if a > b)
 }
 
-/// Returns the latest release if it is newer than this build.
-pub async fn check(app: &AppHandle, http: &reqwest::Client) -> Option<UpdateInfo> {
+/// Returns the latest release if it is newer than this build. An error means GitHub could not be
+/// asked (offline, not answering), which is not the same as "no update".
+pub async fn check(app: &AppHandle, http: &reqwest::Client) -> Result<Option<UpdateInfo>> {
     if self_updating() {
         match app.updater() {
             Ok(updater) => match updater.check().await {
                 Ok(Some(update)) => {
-                    return Some(UpdateInfo {
+                    return Ok(Some(UpdateInfo {
                         url: release_url(&update.version),
                         version: update.version.clone(),
                         notes: update.body.clone().filter(|b| !b.trim().is_empty()),
                         can_install: true,
-                    })
+                    }))
                 }
-                Ok(None) => return None,
+                Ok(None) => return Ok(None),
                 // E.g. a release published before self-updating existed (no latest.json).
                 Err(e) => log::info!("update check: {e}; asking the GitHub API instead"),
             },
@@ -81,29 +82,33 @@ pub async fn check(app: &AppHandle, http: &reqwest::Client) -> Option<UpdateInfo
 }
 
 /// The plain "is there a newer release?" question, for copies that can't update themselves.
-async fn latest_release(http: &reqwest::Client) -> Option<UpdateInfo> {
+async fn latest_release(http: &reqwest::Client) -> Result<Option<UpdateInfo>> {
     let resp = http
         .get(LATEST_API_URL)
         .header("Accept", "application/vnd.github+json")
         .timeout(Duration::from_secs(15))
         .send()
         .await
-        .ok()?;
+        .map_err(|e| {
+            log::info!("update check: {e}");
+            anyhow!("Couldn't reach GitHub to check for updates. Check your internet connection.")
+        })?;
     if !resp.status().is_success() {
-        return None;
+        return Err(anyhow!("GitHub didn't answer the update check (HTTP {}). Try again later.", resp.status().as_u16()));
     }
-    let v: serde_json::Value = resp.json().await.ok()?;
-    let tag = v.get("tag_name")?.as_str()?;
+    let unreadable = || anyhow!("GitHub's answer to the update check could not be read. Try again later.");
+    let v: serde_json::Value = resp.json().await.map_err(|_| unreadable())?;
+    let tag = v.get("tag_name").and_then(|t| t.as_str()).ok_or_else(unreadable)?;
     if !is_newer(tag, env!("CARGO_PKG_VERSION")) {
-        return None;
+        return Ok(None);
     }
     let version = tag.trim_start_matches('v').to_string();
-    Some(UpdateInfo {
+    Ok(Some(UpdateInfo {
         url: v.get("html_url").and_then(|u| u.as_str()).map(str::to_string).unwrap_or_else(|| release_url(&version)),
         notes: v.get("body").and_then(|b| b.as_str()).map(str::to_string).filter(|b| !b.trim().is_empty()),
         version,
         can_install: false,
-    })
+    }))
 }
 
 /// Downloads, verifies and installs the latest release, then restarts OpenDictate.

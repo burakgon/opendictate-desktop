@@ -361,10 +361,10 @@ pub fn update_info(engine: State<'_, Arc<Engine>>) -> Option<crate::updates::Upd
     engine.update.lock().clone()
 }
 
-/// Checks GitHub for a newer release right now.
+/// Checks GitHub for a newer release right now. Fails when GitHub could not be asked.
 #[tauri::command]
 pub async fn check_for_updates(engine: State<'_, Arc<Engine>>) -> R<Option<crate::updates::UpdateInfo>> {
-    Ok(engine.check_updates().await)
+    engine.check_updates().await.map_err(|e| format!("{e:#}"))
 }
 
 /// Downloads, verifies and installs the latest release, then restarts.
