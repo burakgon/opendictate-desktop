@@ -3,11 +3,13 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CheckCircle2,
   ClipboardPaste,
+  Download,
   Keyboard,
   Mic,
   Monitor,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Terminal,
   Volume2,
   XCircle,
@@ -15,6 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { GithubMark } from "../components/Brand";
 import { HotkeyRecorder } from "../components/HotkeyRecorder";
+import { useUpdate } from "../components/UpdateBanner";
 import { Button, PageHeader, Row, Section, Segmented, Select, Slider, StatusDot, Toggle, cx, useToast } from "../components/ui";
 import { LevelBars } from "../components/Visuals";
 import {
@@ -173,12 +176,100 @@ function MacPermissions() {
   );
 }
 
+/**
+ * The daily update check and "Check now". The answer stays in the row, where it was asked for,
+ * and an update that was found is installed from here.
+ */
+function UpdateCheck() {
+  const { settings, update: change, system } = useStore();
+  const { update, setUpdate, installing, percent, install, failure } = useUpdate();
+  const [checking, setChecking] = useState(false);
+  // What the last "Check now" came back with, unless that was an update.
+  const [answer, setAnswer] = useState<"latest" | { error: string } | null>(null);
+  const check = async () => {
+    setChecking(true);
+    setAnswer(null);
+    try {
+      const found = await api.checkForUpdates();
+      setUpdate(found);
+      setAnswer(found ? null : "latest");
+    } catch (e) {
+      setAnswer({ error: errorText(e) });
+    } finally {
+      setChecking(false);
+    }
+  };
+  const line = "mt-1.5 flex items-center gap-1.5";
+  return (
+    <Row
+      label="Check for updates"
+      description={
+        <>
+          Once a day, ask GitHub whether a newer version exists. You decide when to install it.
+          <div aria-live="polite">
+            {update && installing ? (
+              <div className="mt-1.5 text-brand-300">
+                {`Downloading OpenDictate ${update.version}…${percent === null ? "" : ` ${percent}%`}`}
+                <div className="mt-1.5 h-1 max-w-72 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full brand-gradient transition-[width] duration-300" style={{ width: `${percent ?? 8}%` }} />
+                </div>
+              </div>
+            ) : update ? (
+              <>
+                <div className={cx(line, "text-brand-300")}>
+                  <Sparkles className="size-3.5 shrink-0" />
+                  {`OpenDictate ${update.version} is available.`}
+                  {update.can_install && (
+                    <button className="text-white/60 underline decoration-white/25 underline-offset-2 hover:text-white" onClick={() => openUrl(update.url)}>
+                      What's new
+                    </button>
+                  )}
+                </div>
+                {failure && (
+                  <div className={cx(line, "text-rose-300")}>
+                    <XCircle className="size-3.5 shrink-0 text-rose-400" />
+                    {`It could not be installed: ${failure}`}
+                  </div>
+                )}
+              </>
+            ) : answer === "latest" ? (
+              <div className={cx(line, "text-emerald-300")}>
+                <CheckCircle2 className="size-3.5 shrink-0 text-emerald-400" />
+                {`You're on the latest version (${system?.version ?? ""}).`}
+              </div>
+            ) : answer ? (
+              <div className={cx(line, "text-rose-300")}>
+                <XCircle className="size-3.5 shrink-0 text-rose-400" />
+                {answer.error}
+              </div>
+            ) : null}
+          </div>
+        </>
+      }
+    >
+      {!update ? (
+        <Button size="sm" variant="secondary" loading={checking} onClick={check}>
+          Check now
+        </Button>
+      ) : update.can_install ? (
+        <Button size="sm" variant="primary" icon={<Download className="size-3.5" />} loading={installing} onClick={install}>
+          Update &amp; restart
+        </Button>
+      ) : (
+        <Button size="sm" variant="secondary" icon={<Download className="size-3.5" />} onClick={() => openUrl(update.url)}>
+          Download…
+        </Button>
+      )}
+      <Toggle checked={settings.general.check_updates} onChange={(v) => change((s) => void (s.general.check_updates = v))} />
+    </Row>
+  );
+}
+
 export function SettingsPage() {
   const { settings, update, system, refreshSystem } = useStore();
   const [devices, setDevices] = useState<{ id: string; label: string }[]>([]);
   const [autostart, setAutostart] = useState(false);
   const [fixing, setFixing] = useState(false);
-  const [checking, setChecking] = useState(false);
   const toast = useToast();
   const env = system?.environment;
   const os = env?.os;
@@ -536,27 +627,7 @@ export function SettingsPage() {
         <Row label={trayIcon ? `Start in the ${trayName}` : "Start in the background"} description="Don't open this window when OpenDictate starts.">
           <Toggle checked={settings.general.start_hidden} onChange={(v) => update((s) => void (s.general.start_hidden = v))} />
         </Row>
-        <Row label="Check for updates" description="Once a day, ask GitHub whether a newer version exists. You decide when to install it.">
-          <Button
-            size="sm"
-            variant="ghost"
-            loading={checking}
-            onClick={async () => {
-              setChecking(true);
-              try {
-                const found = await api.checkForUpdates();
-                toast(found ? `OpenDictate ${found.version} is available — see Home to install it.` : `You're on the latest version (${system?.version ?? ""}).`, "success");
-              } catch (e) {
-                toast(errorText(e), "error");
-              } finally {
-                setChecking(false);
-              }
-            }}
-          >
-            Check now
-          </Button>
-          <Toggle checked={settings.general.check_updates} onChange={(v) => update((s) => void (s.general.check_updates = v))} />
-        </Row>
+        <UpdateCheck />
         <Row label="Keep history" description="Stored only on this computer.">
           <Toggle checked={settings.general.history_enabled} onChange={(v) => update((s) => void (s.general.history_enabled = v))} />
         </Row>

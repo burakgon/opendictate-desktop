@@ -4,6 +4,9 @@ All notable changes to OpenDictate are documented here.
 
 ## [0.2.4] - 2026-11-10
 
+### Changed
+- *Check now* (under *Settings → Interface*) answers in its own row instead of in a notification that disappeared after three seconds. If a newer version exists, the row says so and its button becomes *Update & restart*; the download progress — and the reason, should the installation fail — appear in the same place.
+
 ### Fixed
 - A check that could not reach GitHub no longer claims "You're on the latest version": it says that GitHub could not be reached. A newer version that was already found stays on offer.
 
