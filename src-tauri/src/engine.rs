@@ -671,7 +671,10 @@ impl Engine {
         let changed = self.update.lock().as_ref().map(|u| u.version.clone()) != found.as_ref().map(|u| u.version.clone());
         *self.update.lock() = found.clone();
         if changed {
-            tray::refresh_menu(&self.app, &self.settings.read());
+            // Not under the settings lock: rebuilding the menu waits for the main thread, which
+            // may itself be waiting to write the settings.
+            let settings = self.settings.read().clone();
+            tray::refresh_menu(&self.app, &settings);
         }
         found
     }
