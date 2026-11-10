@@ -101,12 +101,22 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
-    let mut builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let rest: Vec<String> = argv.into_iter().skip(1).collect();
-            if !handle_args(app, &rest) {
-                tray::show_main(app, None);
+    // What a second launch asks for (`opendictate toggle`, or just opening the app again) is done
+    // on a thread of its own, in order. Not inside the plugin's handler: on Windows that is a
+    // window procedure answering the other process, and a window can't be created from there -
+    // which would leave no way back to the window once the tray icon is hidden.
+    let (launch_tx, launch_rx) = std::sync::mpsc::channel::<(AppHandle, Vec<String>)>();
+    std::thread::spawn(move || {
+        for (app, args) in launch_rx {
+            if !handle_args(&app, &args) {
+                tray::show_main(&app, None);
             }
+        }
+    });
+
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(move |app, argv, _cwd| {
+            let _ = launch_tx.send((app.clone(), argv.into_iter().skip(1).collect()));
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(tauri_plugin_opener::init())
